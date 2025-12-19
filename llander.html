@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Lunar Lander / Tranquility Base - Apple ][ clone</title>
+<style>
+    body { 
+		margin: 0; 
+		background: black; 
+		overflow: hidden; 
+	}
+    canvas { 
+		display: block; 
+		margin: 0 auto; 
+		background: black; 
+	}
+	#scanlines-overlay {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		pointer-events: none;
+		background: repeating-linear-gradient(to right, transparent, transparent 0px, rgba(0, 0, 0, 0.33) 2px, transparent 4px);
+		background-size: 100% 4px;
+		opacity: 1;
+		display:block;
+		z-index: 10;
+	}
+</style>
+</head>
+<body>
+	<div id="scanlines-overlay"></div>
+	<canvas id="gameCanvas"></canvas>
+
+<script>
+//canvas setup
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+let vpW = window.innerWidth;
+let vpH = window.innerHeight;
+canvas.width = vpW;
+canvas.height = vpH;
+
+//utils
+function degToRad(deg){ return deg * Math.PI / 180; }
+function rnd(min,max){ return Math.random()*(max-min)+min; }
+function distance(x1,y1,x2,y2){ return Math.hypot(x2-x1,y2-y1); }
+
+//classes
+class Vec { constructor(x,y){ this.x=x; this.y=y; } }
+class Line { constructor(a,b){ this.pointA=a; this.pointB=b; } }
+class LandingLine { constructor(a,b,m){ this.pointA=a; this.pointB=b; this.multiply=m; } }
+class Star { constructor(pos,alpha){ this.pos=pos; this.alpha=alpha; } }
+
+//game status
+let frames=0;
+let fuel=999;
+let startTime=Date.now();
+let ship={ position:new Vec(vpW/2,50), size:{width:50,height:50}, speed:new Vec(0,0), angle:0, alive:true, landed:false };
+let myCam={ position:new Vec(0,0), scale:1 };
+let keyList=[];
+let gravity=0.0075;
+let shipPieces = [];//kaboom
+let shipSmoke = [];//nuvoletta
+let tdelta = 15;//quanto accidentato il terreno
+let minLandingSpeed = 0.5;
+let minLandingAngle = 5;
+
+let starsList=[];//stelle
+
+//audio
+const engineSound = new Audio('engine.mp3'); engineSound.loop=true;
+const explosionSound = new Audio('explosion.mp3'); explosionSound.loop=false;
+
+let currentColor = 0;//color change
+let COLORS = [
+	'#fff',//bianco
+	'#0f0',//verde
+	'#f80'//arancione
+];
+let COLORS_ALPHA = [
+	'rgba(255,255,255,xxx)',//bianco
+	'rgba(0,255,0,xxx)',//verde
+	'rgba(255,128,0,xxx)'//arancio
+];
+let realFlames = false;//fiammeggione switch
+let textureEnabled = false;//texture switch
+let scanLinesEnabled = true;//scanlines switch
+
+
+//terreno
+let mainTerrain={ vertices:[], landingPlaces:[] };
+function createTerrain() {
+    mainTerrain.vertices = [];
+    mainTerrain.landingPlaces = [];
+
+    const stepX = vpW / 200;
+    const baseY = vpH * 0.8;
+    let x = 0;
+    let y = baseY;
+
+    const landingCount = Math.floor(rnd(4, 6));
+    const landingWidth = ship.size.width * 1.5;
+    const totalSteps = Math.floor(vpW / stepX);
+    const landingInterval = Math.floor(totalSteps / landingCount);
+    let nextLandingStep = landingInterval;
+
+    while (x <= vpW) {
+        //controllo landing line
+        if (Math.floor(x / stepX) === nextLandingStep) {
+            //crea landing line piatta
+            const ll = new LandingLine(
+                new Vec(x, y),
+                new Vec(x + landingWidth, y),
+                2
+            );
+            mainTerrain.landingPlaces.push(ll);
+
+            //aggiungi vertice inizio e fine
+            mainTerrain.vertices.push(new Vec(x, y));
+            mainTerrain.vertices.push(new Vec(x + landingWidth, y));
+
+            //salta x della landing line
+            x += landingWidth;
+
+            //prepara prossima landing line
+            nextLandingStep += landingInterval;
+        } else {
+            //terreno ondulato normale
+            y += rnd(-tdelta, tdelta);
+            mainTerrain.vertices.push(new Vec(x, y));
+            x += stepX;
+        }
+    }
+
+    //chiudi a destra
+    mainTerrain.vertices.push(new Vec(vpW, baseY));
+}
+
+
+function updateTerrain() {
+    const buffer = vpW; //margine extra prima di generare terreno
+    const stepX = vpW / 200;
+
+    //estende a dx
+    while(ship.position.x + buffer > mainTerrain.vertices[mainTerrain.vertices.length-1].x){
+        let lastVertex = mainTerrain.vertices[mainTerrain.vertices.length-1];
+        let x = lastVertex.x + stepX;
+        let y = lastVertex.y + rnd(-tdelta, tdelta);
+
+        //landing line casuale
+        if(Math.random() < 0.03){
+            const landingWidth = ship.size.width * 1.5;
+            const ll = new LandingLine(new Vec(x, y), new Vec(x + landingWidth, y), 2);
+            mainTerrain.landingPlaces.push(ll);
+
+            //aggiungi vertici della landing line
+            mainTerrain.vertices.push(new Vec(x, y));
+            mainTerrain.vertices.push(new Vec(x + landingWidth, y));
+
+            //salta x per evitare vertice subito dopo
+            x += landingWidth;
+        } else {
+            //vertice normale
+            mainTerrain.vertices.push(new Vec(x, y));
+        }
+    }
+
+    //estende a sx
+	while(ship.position.x - buffer < mainTerrain.vertices[0].x){
+		let firstVertex = mainTerrain.vertices[0];
+		let x = firstVertex.x - stepX;
+		let y = firstVertex.y + rnd(-tdelta, tdelta);
+
+		if(Math.random() < 0.03){
+			const landingWidth = ship.size.width * 1.5;
+			const ll = new LandingLine(new Vec(x - landingWidth, y), new Vec(x, y), 2);
+			mainTerrain.landingPlaces.push(ll);
+
+			//aggiungi vertici in ordine decrescente per unshift
+			mainTerrain.vertices.unshift(new Vec(x, y));
+			mainTerrain.vertices.unshift(new Vec(x - landingWidth, y));
+		} else {
+			mainTerrain.vertices.unshift(new Vec(x, y));
+		}
+	}
+
+
+    //toglie vertici lontani
+    while(mainTerrain.vertices.length > 200 && mainTerrain.vertices[0].x < ship.position.x - buffer*2){
+        mainTerrain.vertices.shift();
+    }
+    while(mainTerrain.vertices.length > 200 && mainTerrain.vertices[mainTerrain.vertices.length-1].x > ship.position.x + buffer*2){
+        mainTerrain.vertices.pop();
+    }
+}
+
+
+//stelline
+function createStars(){
+    starsList=[];
+    for(let i=0;i<150;i++){
+        starsList.push(new Star(new Vec(rnd(vpW*0.05,vpW*0.95), rnd(vpH*0.05,vpH*0.85)), Math.floor(rnd(50,255))));
+    }
+}
+
+//controlli input
+document.addEventListener('keydown', e=>{
+	console.log(e.key);
+    if(!keyList.includes(e.key)) keyList.push(e.key);
+    if(e.key==='r' || e.key==='R') { resetGame(); }
+	if(e.key==='c' || e.key==='C') { currentColor = (currentColor+1)%COLORS.length; }
+	if(e.key==='f' || e.key==='F') { realFlames = !realFlames; }
+	if(e.key==='t' || e.key==='T') { textureEnabled = !textureEnabled; }
+	if(e.key==='x' || e.key==='X') { scanLinesEnabled = !scanLinesEnabled; 
+		if (scanLinesEnabled) document.getElementById('scanlines-overlay').style.display = 'block';
+		else document.getElementById('scanlines-overlay').style.display = 'none';
+	}
+    if(e.key==='ArrowUp' && fuel > 0 && engineSound.paused){ engineSound.currentTime=0; engineSound.play(); }
+});
+
+document.addEventListener('keyup', e=>{
+    let idx = keyList.indexOf(e.key); if(idx>=0) keyList.splice(idx,1);
+    if(e.key==='ArrowUp'){ engineSound.pause(); }
+});
+
+//resize
+window.addEventListener('resize',()=>{
+    vpW=window.innerWidth;
+	vpH=window.innerHeight;
+    canvas.width=vpW;
+	canvas.height=vpH;
+});
+
+
+
+//reset
+function resetGame(){
+    fuel=999; 
+	startTime=Date.now();
+    ship.position = new Vec(vpW*0.5,50);
+    ship.speed = new Vec(0,0);
+    ship.angle=0; 
+	ship.alive=true;
+    ship.landed=false; 
+	shipPieces = [];//kaboom
+	shipSmoke = [];//nuvoletta
+    createTerrain();
+    createStars();
+}
+
+//telecamera
+function updateCamera() {
+	//zoom solo vicino al terreno
+    let minDist = Infinity;
+    const shipCenterX = ship.position.x;
+    const shipCenterY = ship.position.y;
+
+    for(const v of mainTerrain.vertices){
+        const d = distance(shipCenterX, shipCenterY, v.x, v.y);
+        if(d < minDist) minDist = d;
+    }
+	
+	const zoomThreshold = vpH * 0.25;
+	
+	//prima di almeno 5 secondi, non devi zoommare!
+	if (Date.now() - startTime < 5000 || minDist > zoomThreshold) {
+        myCam.scale = 1;
+        myCam.position.x = 0;
+        myCam.position.y = 0;
+        return;
+    }
+	
+	
+	if(minDist < zoomThreshold){
+        myCam.scale = 2 + (zoomThreshold - minDist) / zoomThreshold; //zoom dinamico
+    } else {
+        myCam.scale = 1;
+    }
+
+    //la camera segue sempre la navicella
+    myCam.position.x = shipCenterX - vpW/2 / myCam.scale;
+    myCam.position.y = shipCenterY - vpH/2 / myCam.scale;
+}
+
+
+
+//movimento navetta
+function moveShip(){
+    if(!ship.alive || ship.landed) return;
+    for(const key of keyList){
+        if(key==='ArrowRight') ship.angle += 0.5;
+        if(key==='ArrowLeft') ship.angle -= 0.5;
+        if(key==='ArrowUp' && fuel>0){
+            fuel=Math.max(0,fuel-1);
+            ship.speed.x += Math.sin(degToRad(ship.angle))*0.015;
+            ship.speed.y -= Math.cos(degToRad(ship.angle))*0.015;
+        }
+    }
+    ship.speed.y += gravity;
+    ship.speed.x = Math.min(Math.max(ship.speed.x,-1),1.5);
+    ship.speed.y = Math.min(Math.max(ship.speed.y,-0.5),1.5);
+    ship.position.x += ship.speed.x;
+    ship.position.y += ship.speed.y;
+}
+
+//collisioni (qui iniziano i dolori)
+function getShipOBB() {
+    const hw = ship.size.width / 2;
+    const hh = ship.size.height / 2;
+    const a = degToRad(ship.angle);
+    const cos = Math.cos(a);
+    const sin = Math.sin(a);
+
+    const cx = ship.position.x;
+    const cy = ship.position.y;
+
+    return [
+        { x: cx + (-hw)*cos - (-hh)*sin, y: cy + (-hw)*sin + (-hh)*cos }, //TL
+        { x: cx + ( hw)*cos - (-hh)*sin, y: cy + ( hw)*sin + (-hh)*cos }, //TR
+        { x: cx + ( hw)*cos - ( hh)*sin, y: cy + ( hw)*sin + ( hh)*cos }, //BR
+        { x: cx + (-hw)*cos - ( hh)*sin, y: cy + (-hw)*sin + ( hh)*cos }  //BL
+    ];
+}
+
+function segmentsIntersect(a,b,c,d){
+    function ccw(p1,p2,p3){
+        return (p3.y-p1.y)*(p2.x-p1.x) > (p2.y-p1.y)*(p3.x-p1.x);
+    }
+    return (
+        ccw(a,c,d) !== ccw(b,c,d) &&
+        ccw(a,b,c) !== ccw(a,b,d)
+    );
+}
+
+function checkCollision() {
+    if (!ship.alive || ship.landed) return;
+
+    const box = getShipOBB();
+
+    //lati della hitbox
+    const edges = [
+        [box[0], box[1]],
+        [box[1], box[2]],
+        [box[2], box[3]],
+        [box[3], box[0]]
+    ];
+
+    //piattaforme di landing
+    for (const ll of mainTerrain.landingPlaces) {
+        const A = ll.pointA;
+        const B = ll.pointB;
+
+        for (const e of edges) {
+            if (segmentsIntersect(e[0], e[1], A, B)) {
+                if (ship.speed.y < minLandingSpeed && Math.abs(ship.angle % 360) < minLandingAngle) {
+                    ship.landed = true;
+                    ship.speed.x = 0;
+                    ship.speed.y = 0;
+                    ship.angle = 0;
+                    return;
+                } else {
+                    explodeShip();
+                    return;
+                }
+            }
+        }
+    }
+
+    //terreno accidentato normale
+    for (let i = 1; i < mainTerrain.vertices.length; i++) {
+        const A = mainTerrain.vertices[i-1];
+        const B = mainTerrain.vertices[i];
+
+        for (const e of edges) {
+            if (segmentsIntersect(e[0], e[1], A, B)) {
+                explodeShip();
+                return;
+            }
+        }
+    }
+}
+
+
+
+
+function explodeShip() {
+    ship.alive = false;
+    explosionSound.play();
+
+    const w = ship.size.width;
+    const h = ship.size.height;
+
+    const lines = [
+        {start: {x: -w*0.25, y: -h*0.25}, end: {x: w*0.25, y: -h*0.25}},
+        {start: {x: -w*0.15, y: -h*0.05}, end: {x: w*0.15, y: 0.2*h}},
+        {start: {x: -w*0.15, y: 0.2*h}, end: {x: -w*0.3, y: 0.35*h}},
+        {start: {x: w*0.15, y: 0.2*h}, end: {x: w*0.3, y: 0.35*h}}
+    ];
+
+    shipPieces = lines.map(line => {
+        return {
+            start: {...line.start},
+            end: {...line.end},
+            pos: new Vec(ship.position.x, ship.position.y),
+            vel: new Vec(rnd(-3,3), rnd(-3,0)), //pezzi sparano in su
+            angle: rnd(0,360),
+            angularVel: rnd(-5,5), //velocita di rotazione
+            life: 100 + Math.random()*50
+        };
+    });
+
+    //palle di fumo
+    shipSmoke = [];
+    for(let i=0;i<50;i++){
+        shipSmoke.push({
+            pos: new Vec(ship.position.x, ship.position.y),
+            vel: new Vec(rnd(-1,1), rnd(-1,0)),
+            alpha: Math.random() * 3,
+            size: rnd(3,6)
+        });
+    }
+}
+
+function updateShipPieces() {
+    for(let i = shipPieces.length-1; i>=0; i--){
+        const p = shipPieces[i];
+        p.pos.x += p.vel.x;
+        p.pos.y += p.vel.y;
+        p.vel.y += gravity*0.1; //gravita piu leggera
+        p.angle += p.angularVel;
+        p.life--;
+        if(p.life <= 0) shipPieces.splice(i,1);
+    }
+
+    //aggiornamento palle di fumo
+    for(let i = shipSmoke.length-1; i>=0; i--){
+        const s = shipSmoke[i];
+        s.pos.x += s.vel.x;
+        s.pos.y += s.vel.y;
+        s.alpha -= 0.01;
+		s.size  -= 0.01;
+        if(s.alpha <= 0) shipSmoke.splice(i,1);
+    }
+}
+
+
+//disegno
+function drawStars() {
+    for(const s of starsList){
+        s.alpha = (s.alpha + 5) % 255;
+        ctx.fillStyle = COLORS_ALPHA[currentColor].replace('xxx',s.alpha/255);
+        ctx.beginPath();
+        //disegno fisso sullo schermo
+        const x = s.pos.x; 
+        const y = s.pos.y;
+        ctx.arc(x, y, 1, 0, Math.PI*2);
+        ctx.fill();
+    }
+}
+
+function drawTerrain() {
+    ctx.beginPath();
+	
+    const v0 = mainTerrain.vertices[0];
+    ctx.moveTo(
+        (v0.x - myCam.position.x) * myCam.scale,
+        (v0.y - myCam.position.y) * myCam.scale
+    );
+
+    for (let i = 1; i < mainTerrain.vertices.length; i++) {
+        const v = mainTerrain.vertices[i];
+        ctx.lineTo(
+            (v.x - myCam.position.x) * myCam.scale,
+            (v.y - myCam.position.y) * myCam.scale
+        );
+    }
+
+    //chiudo il basso per colorare
+	const last = mainTerrain.vertices[mainTerrain.vertices.length - 1];
+    const bottomY = vpH + 200; //molto sotto lo schermo
+
+    ctx.lineTo(
+        (last.x - myCam.position.x) * myCam.scale,
+        bottomY
+    );
+    ctx.lineTo(
+        (v0.x - myCam.position.x) * myCam.scale,
+        bottomY
+    );
+    ctx.closePath();
+
+	//rimuove stelle dal terreno
+	ctx.fillStyle = 'black';
+	ctx.fill();
+	
+	if(textureEnabled) {
+		//gradiente lunare :-D
+		const grad = ctx.createLinearGradient(0, 0, 0, vpH);
+		grad.addColorStop(0, COLORS_ALPHA[currentColor].replace('xxx','0.5'));
+		grad.addColorStop(1, 'rgba(0,0,0,1)');
+		ctx.fillStyle = grad;
+		ctx.fill();
+	}
+	
+    //contorno
+    ctx.strokeStyle = COLORS[currentColor];
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    //landing 
+    ctx.lineWidth = 3;
+    for (const ll of mainTerrain.landingPlaces) {
+        const x1 = (ll.pointA.x - myCam.position.x) * myCam.scale;
+        const y1 = (ll.pointA.y - myCam.position.y) * myCam.scale;
+        const x2 = (ll.pointB.x - myCam.position.x) * myCam.scale;
+        const y2 = (ll.pointB.y - myCam.position.y) * myCam.scale;
+
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+    }
+    ctx.lineWidth = 1;
+}
+
+
+function drawShip() {
+    if(!ship.alive) return; //non disegnare se distrutta
+
+    const centerX = (ship.position.x - myCam.position.x) * myCam.scale;
+    const centerY = (ship.position.y - myCam.position.y) * myCam.scale;
+    const w = ship.size.width;
+    const h = ship.size.height;
+
+    ctx.save();
+	ctx.translate(centerX, centerY);
+	ctx.scale(myCam.scale, myCam.scale);
+	ctx.rotate(degToRad(ship.angle));
+
+	//hitbox
+	//ctx.strokeStyle = 'red';
+	//ctx.strokeRect(
+	//	-ship.size.width / 2,
+	//	-ship.size.height / 2,
+	//	ship.size.width,
+	//	ship.size.height
+	//);
+	
+	
+    //cerchio
+    ctx.strokeStyle = COLORS[currentColor];
+    ctx.beginPath();
+    ctx.arc(0, -h*0.2, w*0.3, 2.4, 7);
+    ctx.stroke();
+
+    //rettangolo
+    ctx.strokeRect(-w*0.25, 0, w*0.5, h*0.20);
+	ctx.moveTo(-w*0.25, h*0.1);
+	ctx.lineTo(w*0.25, h*0.1);
+	ctx.stroke();
+	ctx.moveTo(0,0);
+	ctx.lineTo(0,h*0.2);
+	ctx.stroke();
+
+    //zampette atterraggio
+    ctx.beginPath();
+    ctx.moveTo(-w*0.20, h*0.20);
+    ctx.lineTo(-w*0.40, h*0.5);
+	ctx.lineTo(-w*0.5, h*0.5);
+	ctx.lineTo(-w*0.35, h*0.5);
+	
+	ctx.moveTo(-w*0.25, h*0.1);
+	ctx.lineTo(-w*0.40, h*0.5);
+    
+	ctx.moveTo(w*0.20, h*0.20);
+    ctx.lineTo(w*0.40, h*0.5);
+	ctx.lineTo(w*0.5, h*0.5);
+	ctx.lineTo(w*0.35, h*0.5);
+	
+	ctx.moveTo(w*0.25, h*0.1);
+	ctx.lineTo(w*0.40, h*0.5);
+    ctx.stroke();
+
+    //FIAMMONE CLAMOROSO
+	if (keyList.includes('ArrowUp') && fuel > 0) {
+
+		const flameLen = h * (0.5 + Math.random() * 0.5);//fiamma alta
+		const flameW  = w * 0.15;//fiamma stretta
+
+		const grad = ctx.createRadialGradient(0, h*0.15, 2, 0, h*0.25, flameLen);
+		if(realFlames) {
+			grad.addColorStop(0, 'rgba(255,255,255,0.9)');
+			grad.addColorStop(0.33, 'rgba(255,200,50,0.9)');
+			grad.addColorStop(0.66, 'rgba(255,0,0,0.7)');
+			grad.addColorStop(1, 'rgba(255,0,0,0)');
+		} else {
+			grad.addColorStop(0, COLORS_ALPHA[currentColor].replace('xxx','0.9'));
+			grad.addColorStop(1, COLORS_ALPHA[currentColor].replace('xxx','0'));
+		}
+
+		ctx.fillStyle = grad;
+		ctx.beginPath();
+		ctx.moveTo(-flameW, h*0.2 + 1);
+		ctx.lineTo(0, h*0.2 + flameLen);
+		ctx.lineTo(flameW, h*0.2 + 1);
+		ctx.closePath();
+		ctx.fill();
+	}
+
+
+    ctx.restore();
+}
+
+function drawShipPieces() {
+    ctx.strokeStyle = COLORS[currentColor];
+    for(const p of shipPieces){
+        ctx.save();
+        ctx.translate((p.pos.x - myCam.position.x)*myCam.scale, (p.pos.y - myCam.position.y)*myCam.scale);
+        ctx.rotate(p.angle * Math.PI / 180);
+        ctx.beginPath();
+        ctx.moveTo(p.start.x * myCam.scale, p.start.y * myCam.scale);
+        ctx.lineTo(p.end.x * myCam.scale, p.end.y * myCam.scale);
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    //palle di fumo
+    for(const s of shipSmoke){
+		ctx.strokeStyle = COLORS_ALPHA[currentColor].replace('xxx',s.alpha);
+		ctx.beginPath();
+        ctx.arc((s.pos.x - myCam.position.x)*myCam.scale, (s.pos.y - myCam.position.y)*myCam.scale, s.size*myCam.scale, 0, Math.PI*2);
+		if(textureEnabled) {
+			ctx.fillStyle = COLORS_ALPHA[currentColor].replace('xxx',s.alpha/2);
+			ctx.fill();
+		}
+        ctx.stroke();;
+    }
+}
+
+
+function drawStats(){
+    ctx.fillStyle = COLORS[currentColor];
+	ctx.font='16px monospace'; 
+	ctx.textAlign='left';
+	let x1 = 0;
+	let x2 = vpW/2 - 40;
+	let x3 = vpW - 80;
+    ctx.fillText(`FUEL: ${fuel.toFixed(1)}`,x1,16);
+    ctx.fillText(`ANGLE: ${ship.angle.toFixed(2)}`,x1,32);
+	ctx.fillText(`PX: ${ship.position.x.toFixed(2)}`,x2,16);
+	ctx.fillText(`PY: ${ship.position.y.toFixed(2)}`,x2,32);	
+	ctx.fillText(`VX: ${ship.speed.x.toFixed(2)}`,x3,16);
+	ctx.fillText(`VY: ${ship.speed.y.toFixed(2)}`,x3,32);	
+	
+	ctx.fillText(`Lunar Lander / Tranquility Base - Apple ][ clone`,x1,vpH - 16);
+	ctx.fillText(`[R]eset - [C]olor - [F]lames - [T]exture - [X]canlines toggle`,vpW-550,vpH - 16);
+}
+
+//update loop
+function update(){
+    frames++;
+    ctx.fillStyle='black'; 
+    ctx.fillRect(0,0,vpW,vpH);
+
+    moveShip();
+    checkCollision();
+
+    //aggiorna terreno dinamicamente
+    updateTerrain();
+
+    updateCamera();
+    drawStars();
+    drawTerrain();
+    drawShip();
+    drawStats();
+
+    updateShipPieces();
+    drawShipPieces();
+
+    requestAnimationFrame(update);
+}
+
+
+//init loop
+resetGame();
+update();
+</script>
+</body>
+</html>
