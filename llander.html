@@ -247,6 +247,7 @@ function resetGame(){
     ship.landed=false; 
 	shipPieces = [];//kaboom
 	shipSmoke = [];//nuvoletta
+	myCam={ position:new Vec(0,0), scale:1 };
     createTerrain();
     createStars();
 }
@@ -265,15 +266,6 @@ function updateCamera() {
 	
 	const zoomThreshold = vpH * 0.25;
 	
-	//prima di almeno 5 secondi, non devi zoommare!
-	if (Date.now() - startTime < 5000 || minDist > zoomThreshold) {
-        myCam.scale = 1;
-        myCam.position.x = 0;
-        myCam.position.y = 0;
-        return;
-    }
-	
-	
 	if(minDist < zoomThreshold){
         myCam.scale = 2 + (zoomThreshold - minDist) / zoomThreshold; //zoom dinamico
     } else {
@@ -282,7 +274,10 @@ function updateCamera() {
 
     //la camera segue sempre la navicella
     myCam.position.x = shipCenterX - vpW/2 / myCam.scale;
-    myCam.position.y = shipCenterY - vpH/2 / myCam.scale;
+	
+	//ma prima di 5 sec non devi zoommare!
+	if (Date.now() - startTime > 5000 && minDist < zoomThreshold)
+		myCam.position.y = shipCenterY - vpH/2 / myCam.scale;
 }
 
 
@@ -352,11 +347,17 @@ function checkCollision() {
     for (const ll of mainTerrain.landingPlaces) {
         const A = ll.pointA;
         const B = ll.pointB;
+		//centro della landing line 
+		const landingCenterX = (A.x + B.x) / 2;
+		const landingCenterY = (A.y + B.y) / 2;
 
+		const nearCenterX = Math.abs(landingCenterX - ship.position.x) < (ship.size.width / 3);
+		const nearCenterY = Math.abs(landingCenterY - (ship.position.y + ship.size.height / 2)) < 4;
+		
         for (const e of edges) {
             if (segmentsIntersect(e[0], e[1], A, B)) {
-                if (ship.speed.y < minLandingSpeed && Math.abs(ship.angle % 360) < minLandingAngle) {
-                    ship.landed = true;
+                if (nearCenterX && nearCenterY && ship.speed.y < minLandingSpeed && Math.abs(ship.angle % 360) < minLandingAngle) {
+					ship.landed = true;
                     ship.speed.x = 0;
                     ship.speed.y = 0;
                     ship.angle = 0;
@@ -382,6 +383,7 @@ function checkCollision() {
         }
     }
 }
+
 
 
 
@@ -554,7 +556,11 @@ function drawShip() {
     ctx.strokeStyle = COLORS[currentColor];
     ctx.beginPath();
     ctx.arc(0, -h*0.2, w*0.3, 2.4, 7);
-    ctx.stroke();
+	ctx.stroke();
+	//riflesso
+	ctx.beginPath();
+	ctx.arc(0, -h*0.2, w*0.25, 3.5, 4.5);
+	ctx.stroke();
 
     //rettangolo
     ctx.strokeRect(-w*0.25, 0, w*0.5, h*0.20);
