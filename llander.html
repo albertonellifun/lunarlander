@@ -67,6 +67,8 @@ let shipSmoke = [];//nuvoletta
 let tdelta = 15;//quanto accidentato il terreno
 let minLandingSpeed = 0.5;
 let minLandingAngle = 5;
+let landingSize = 1.5;//quanto larghe le piazzole di sosta
+let maxSpeed = 2;//velocita max
 
 let starsList=[];//stelle
 
@@ -102,7 +104,7 @@ function createTerrain() {
     let y = baseY;
 
     const landingCount = Math.floor(rnd(4, 6));
-    const landingWidth = ship.size.width * 1.5;
+    const landingWidth = ship.size.width * landingSize;
     const totalSteps = Math.floor(vpW / stepX);
     const landingInterval = Math.floor(totalSteps / landingCount);
     let nextLandingStep = landingInterval;
@@ -152,7 +154,7 @@ function updateTerrain() {
 
         //landing line casuale
         if(Math.random() < 0.03){
-            const landingWidth = ship.size.width * 1.5;
+            const landingWidth = ship.size.width * landingSize;
             const ll = new LandingLine(new Vec(x, y), new Vec(x + landingWidth, y), 2);
             mainTerrain.landingPlaces.push(ll);
 
@@ -175,7 +177,7 @@ function updateTerrain() {
 		let y = firstVertex.y + rnd(-tdelta, tdelta);
 
 		if(Math.random() < 0.03){
-			const landingWidth = ship.size.width * 1.5;
+			const landingWidth = ship.size.width * landingSize;
 			const ll = new LandingLine(new Vec(x - landingWidth, y), new Vec(x, y), 2);
 			mainTerrain.landingPlaces.push(ll);
 
@@ -276,7 +278,7 @@ function updateCamera() {
     myCam.position.x = shipCenterX - vpW/2 / myCam.scale;
 	
 	//ma prima di 5 sec non devi zoommare!
-	if (Date.now() - startTime > 5000 && minDist < zoomThreshold)
+	if (Date.now() - startTime > 4000 && minDist < zoomThreshold)
 		myCam.position.y = shipCenterY - vpH/2 / myCam.scale;
 }
 
@@ -284,21 +286,28 @@ function updateCamera() {
 
 //movimento navetta
 function moveShip(){
-    if(!ship.alive || ship.landed) return;
+    if(!ship.alive) return;
+	if(ship.landed) return;//voglio poter ripartire?
     for(const key of keyList){
         if(key==='ArrowRight') ship.angle += 0.5;
         if(key==='ArrowLeft') ship.angle -= 0.5;
-        if(key==='ArrowUp' && fuel>0){
-            fuel=Math.max(0,fuel-1);
-            ship.speed.x += Math.sin(degToRad(ship.angle))*0.015;
-            ship.speed.y -= Math.cos(degToRad(ship.angle))*0.015;
-        }
+        if(key==='ArrowUp' && fuel > 0){
+            fuel = Math.max(0, fuel - 1);
+            ship.speed.x += Math.sin(degToRad(ship.angle))*0.0175;
+            ship.speed.y -= Math.cos(degToRad(ship.angle))*0.0175;
+        } 
     }
     ship.speed.y += gravity;
-    ship.speed.x = Math.min(Math.max(ship.speed.x,-1),1.5);
-    ship.speed.y = Math.min(Math.max(ship.speed.y,-0.5),1.5);
+    ship.speed.x = Math.min(Math.max(ship.speed.x,-maxSpeed),maxSpeed);
+    ship.speed.y = Math.min(Math.max(ship.speed.y,-maxSpeed),maxSpeed);
     ship.position.x += ship.speed.x;
     ship.position.y += ship.speed.y;
+	//consumo fuel a prescindere dalla manetta, spegne i motori quando atterra
+	if (fuel > 0 && !ship.landed) {
+		fuel = Math.max(0, fuel - 0.002);
+	} else if (fuel <= 0) {
+		engineSound.pause();
+	}
 }
 
 //collisioni (qui iniziano i dolori)
@@ -395,28 +404,23 @@ function explodeShip() {
     const w = ship.size.width;
     const h = ship.size.height;
 
-    const lines = [
-        {start: {x: -w*0.25, y: -h*0.25}, end: {x: w*0.25, y: -h*0.25}},
-        {start: {x: -w*0.15, y: -h*0.05}, end: {x: w*0.15, y: 0.2*h}},
-        {start: {x: -w*0.15, y: 0.2*h}, end: {x: -w*0.3, y: 0.35*h}},
-        {start: {x: w*0.15, y: 0.2*h}, end: {x: w*0.3, y: 0.35*h}}
-    ];
-
-    shipPieces = lines.map(line => {
-        return {
-            start: {...line.start},
-            end: {...line.end},
-            pos: new Vec(ship.position.x, ship.position.y),
-            vel: new Vec(rnd(-3,3), rnd(-3,0)), //pezzi sparano in su
-            angle: rnd(0,360),
-            angularVel: rnd(-5,5), //velocita di rotazione
-            life: 100 + Math.random()*50
-        };
-    });
-
+	//pezzi di navetta
+	shipPieces = [];
+	for(let i = -5; i <= 5; i++) {
+		let lin = {};
+		lin.start = {x: -w * i / 20, y: -h * i / 20};
+		lin.end = {x: w * i / 20, y: h * i / 20};
+		lin.pos = new Vec(ship.position.x, ship.position.y);
+		lin.vel = new Vec(rnd(-3,3), rnd(-3,0));
+		lin.angle = rnd(0,360);
+        lin.angularVel = rnd(-5,5); //velocita di rotazione
+        lin.life = 50 + rnd(10,100);
+		shipPieces.push( lin );
+	}
+	
     //palle di fumo
     shipSmoke = [];
-    for(let i=0;i<50;i++){
+    for(let i = 0; i < 50; i++) {
         shipSmoke.push({
             pos: new Vec(ship.position.x, ship.position.y),
             vel: new Vec(rnd(-1,1), rnd(-1,0)),
@@ -450,6 +454,7 @@ function updateShipPieces() {
 
 
 //disegno
+//stelline in cielo sbrilluccicose assai
 function drawStars() {
     for(const s of starsList){
         s.alpha = (s.alpha + 5) % 255;
@@ -463,6 +468,95 @@ function drawStars() {
     }
 }
 
+//madreterra
+// Funzione per disegnare la Terra
+function drawEarth() {
+	if(!textureEnabled) return;
+	if(myCam.scale != 1) return;
+	
+    const r = 40;
+    const x = vpW - 100;
+    const y = 60;
+
+    //oceano
+    const ocean = ctx.createRadialGradient(x - 20, y - 20, 10, x, y, r);
+	const green = ctx.createRadialGradient(x-20, y-20, 10, x, y, r);
+	
+	if(realFlames) {
+		ocean.addColorStop(0, "#4bf");//blu
+		ocean.addColorStop(1, "#003");
+		green.addColorStop(0, "#4a5");//verdone
+		green.addColorStop(1, "#030");
+	} else {
+		ocean.addColorStop(0, COLORS[currentColor]);//blu
+		ocean.addColorStop(1, "#000");
+		green.addColorStop(0, COLORS_ALPHA[currentColor].replace('xxx','0.2'));//verdone
+		green.addColorStop(1, COLORS_ALPHA[currentColor].replace('xxx','0.01'));
+	}
+	
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = ocean;
+    ctx.fill();	
+	
+	ctx.fillStyle = green;
+	drawContinent(x - 12, y - 12, 18, 10, 14);//america nord 
+	drawContinent(x - 2, y + 18, 12, 8, 12);//america sud 	
+	drawContinent(x + 18, y - 18, 10, 6, 10);//europa 
+	drawContinent(x + 26, y + 5, 12, 8, 12);//africa 
+	
+	//notte
+    const night = ctx.createRadialGradient(x + 40, y + 20, 10, x, y, r);
+    night.addColorStop(0, "rgba(0,0,0,0.5)");
+    night.addColorStop(1, "rgba(0,0,0,0)");
+
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = night;
+    ctx.fill();
+
+    //atmosfera
+    ctx.beginPath();
+    ctx.arc(x, y, r + 4, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(135,206,250,0.2)";
+    ctx.lineWidth = 6;
+    ctx.stroke();
+	ctx.lineWidth = 1;
+}
+
+//continenti frastagliati
+function drawContinent(cx, cy, baseR, irregularity, points) {
+    ctx.beginPath();
+
+    for (let i = 0; i <= points; i++) {
+        const angle = (i / points) * Math.PI * 2;
+
+        // raggio variabile per creare frastagliatura
+		const seed = i * 928371 + cx * 12345 + cy * 54321;
+		const rand = seededRandom(seed);
+        const r = baseR + (rand - 0.5) * irregularity;
+
+        const px = cx + Math.cos(angle) * r;
+        const py = cy + Math.sin(angle) * r;
+
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+    }
+
+    ctx.closePath();
+    ctx.fill();
+}
+
+function seededRandom(seed) {
+    // hash veloce e deterministico
+    seed = (seed ^ 0x6C8E9CF570932BD5) >>> 0;
+    seed = (seed * 0x6C8E9CF5) >>> 0;
+    return (seed >>> 8) / 0xFFFFFF;
+}
+
+
+
+//terreno lunare
 function drawTerrain() {
     ctx.beginPath();
 	
@@ -591,9 +685,9 @@ function drawShip() {
     ctx.stroke();
 
     //FIAMMONE CLAMOROSO
-	if (keyList.includes('ArrowUp') && fuel > 0) {
-
-		const flameLen = h * (0.5 + Math.random() * 0.5);//fiamma alta
+	if (fuel > 0 && !ship.landed) {
+		const flameStr = keyList.includes('ArrowUp') ? 0.95 : 0.1;
+		const flameLen = h * (flameStr + Math.random() * flameStr);//fiamma alta
 		const flameW  = w * 0.15;//fiamma stretta
 
 		const grad = ctx.createRadialGradient(0, h*0.15, 2, 0, h*0.25, flameLen);
@@ -679,6 +773,7 @@ function update(){
 
     updateCamera();
     drawStars();
+	drawEarth();
     drawTerrain();
     drawShip();
     drawStats();
