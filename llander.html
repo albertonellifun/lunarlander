@@ -49,19 +49,25 @@ function rnd(min,max){ return Math.random()*(max-min)+min; }
 function distance(x1,y1,x2,y2){ return Math.hypot(x2-x1,y2-y1); }
 
 //classes
-class Vec { constructor(x,y){ this.x=x; this.y=y; } }
-class Line { constructor(a,b){ this.pointA=a; this.pointB=b; } }
-class LandingLine { constructor(a,b,m){ this.pointA=a; this.pointB=b; this.multiply=m; } }
-class Star { constructor(pos,alpha){ this.pos=pos; this.alpha=alpha; } }
+class Point 		{ constructor(x,y){ this.x=x; this.y=y; } }
+class LandingLine 	{ constructor(a,b,m){ this.pointA=a; this.pointB=b; this.multiply=m; } }
+class Star 			{ constructor(pos,alpha){ this.pos=pos; this.alpha=alpha; } }
 
 //game status
-let frames=0;
-let fuel=999;
-let startTime=Date.now();
-let ship={ position:new Vec(vpW/2,50), size:{width:50,height:50}, speed:new Vec(0,0), angle:0, alive:true, landed:false };
-let myCam={ position:new Vec(0,0), scale:1 };
-let keyList=[];
-let gravity=0.0075;
+let frames = 0;
+let fuel = 999;//quanto carburante 
+let startTime = Date.now();
+let shipSize = 50;//dimensioni navetta
+let ship = { 	position: new Point(vpW/2,shipSize), 
+				size: { width:shipSize, height:shipSize}, 
+				speed: new Point(0,0), 
+				angle:0, 
+				alive:true, 
+				landed:false };
+let mainTerrain={ vertices:[], landingPlaces:[] };//terreno
+let myCam={ position:new Point(0,0), scale:1 };//telecamera (aargh!)
+let keyList = [];
+let gravity = 0.0075;
 let shipPieces = [];//kaboom
 let shipSmoke = [];//nuvoletta
 let tdelta = 15;//quanto accidentato il terreno
@@ -70,11 +76,11 @@ let minLandingAngle = 5;
 let landingSize = 1.5;//quanto larghe le piazzole di sosta
 let maxSpeed = 2;//velocita max
 
-let starsList=[];//stelle
+let starsList = [];//stelle
 
 //audio
-const engineSound = new Audio('engine.mp3'); engineSound.loop=true;
-const explosionSound = new Audio('explosion.mp3'); explosionSound.loop=false;
+const engineSound = new Audio('engine.mp3'); engineSound.loop = true; engineSound.preload = 'auto';
+const explosionSound = new Audio('explosion.mp3'); explosionSound.loop = false; explosionSound.preload = 'auto';
 
 let currentColor = 0;//color change
 let COLORS = [
@@ -92,6 +98,8 @@ let rockTexture = null;
 let scanLinesEnabled = true;//scanlines switch
 let paused = false;//pause switch
 
+
+//preso in prestito da ASTEROIDS
 function generateRockTexture() {
     const c = document.createElement('canvas');
     c.width = 100;
@@ -110,7 +118,6 @@ function generateRockTexture() {
 }
 
 //terreno
-let mainTerrain={ vertices:[], landingPlaces:[] };
 function createTerrain() {
     mainTerrain.vertices = [];
     mainTerrain.landingPlaces = [];
@@ -131,15 +138,15 @@ function createTerrain() {
         if (Math.floor(x / stepX) === nextLandingStep) {
             //crea landing line piatta
             const ll = new LandingLine(
-                new Vec(x, y),
-                new Vec(x + landingWidth, y),
+                new Point(x, y),
+                new Point(x + landingWidth, y),
                 2
             );
             mainTerrain.landingPlaces.push(ll);
 
             //aggiungi vertice inizio e fine
-            mainTerrain.vertices.push(new Vec(x, y));
-            mainTerrain.vertices.push(new Vec(x + landingWidth, y));
+            mainTerrain.vertices.push(new Point(x, y));
+            mainTerrain.vertices.push(new Point(x + landingWidth, y));
 
             //salta x della landing line
             x += landingWidth;
@@ -149,13 +156,13 @@ function createTerrain() {
         } else {
             //terreno ondulato normale
             y += rnd(-tdelta, tdelta);
-            mainTerrain.vertices.push(new Vec(x, y));
+            mainTerrain.vertices.push(new Point(x, y));
             x += stepX;
         }
     }
 
     //chiudi a destra
-    mainTerrain.vertices.push(new Vec(vpW, baseY));
+    mainTerrain.vertices.push(new Point(vpW, baseY));
 }
 
 
@@ -172,18 +179,18 @@ function updateTerrain() {
         //landing line casuale
         if(Math.random() < 0.03){
             const landingWidth = ship.size.width * landingSize;
-            const ll = new LandingLine(new Vec(x, y), new Vec(x + landingWidth, y), 2);
+            const ll = new LandingLine(new Point(x, y), new Point(x + landingWidth, y), 2);
             mainTerrain.landingPlaces.push(ll);
 
             //aggiungi vertici della landing line
-            mainTerrain.vertices.push(new Vec(x, y));
-            mainTerrain.vertices.push(new Vec(x + landingWidth, y));
+            mainTerrain.vertices.push(new Point(x, y));
+            mainTerrain.vertices.push(new Point(x + landingWidth, y));
 
             //salta x per evitare vertice subito dopo
             x += landingWidth;
         } else {
             //vertice normale
-            mainTerrain.vertices.push(new Vec(x, y));
+            mainTerrain.vertices.push(new Point(x, y));
         }
     }
 
@@ -195,14 +202,14 @@ function updateTerrain() {
 
 		if(Math.random() < 0.03){
 			const landingWidth = ship.size.width * landingSize;
-			const ll = new LandingLine(new Vec(x - landingWidth, y), new Vec(x, y), 2);
+			const ll = new LandingLine(new Point(x - landingWidth, y), new Point(x, y), 2);
 			mainTerrain.landingPlaces.push(ll);
 
 			//aggiungi vertici in ordine decrescente per unshift
-			mainTerrain.vertices.unshift(new Vec(x, y));
-			mainTerrain.vertices.unshift(new Vec(x - landingWidth, y));
+			mainTerrain.vertices.unshift(new Point(x, y));
+			mainTerrain.vertices.unshift(new Point(x - landingWidth, y));
 		} else {
-			mainTerrain.vertices.unshift(new Vec(x, y));
+			mainTerrain.vertices.unshift(new Point(x, y));
 		}
 	}
 
@@ -221,7 +228,7 @@ function updateTerrain() {
 function createStars(){
     starsList=[];
     for(let i=0;i<150;i++){
-        starsList.push(new Star(new Vec(rnd(vpW*0.05,vpW*0.95), rnd(vpH*0.05,vpH*0.85)), Math.floor(rnd(50,255))));
+        starsList.push(new Star(new Point(rnd(vpW*0.05,vpW*0.95), rnd(vpH*0.05,vpH*0.85)), Math.floor(rnd(50,255))));
     }
 }
 
@@ -260,14 +267,14 @@ window.addEventListener('resize',()=>{
 function resetGame(){
     fuel=999; 
 	startTime=Date.now();
-    ship.position = new Vec(vpW*0.5,50);
-    ship.speed = new Vec(0,0);
+    ship.position = new Point(vpW/2,shipSize);
+    ship.speed = new Point(0,0);
     ship.angle=0; 
 	ship.alive=true;
     ship.landed=false; 
 	shipPieces = [];//kaboom
 	shipSmoke = [];//nuvoletta
-	myCam={ position:new Vec(0,0), scale:1 };
+	myCam={ position:new Point(0,0), scale:1 };
     createTerrain();
     createStars();
 	rockTexture = generateRockTexture();
@@ -288,17 +295,24 @@ function updateCamera() {
 	const zoomThreshold = vpH * 0.25;
 	
 	if(minDist < zoomThreshold){
-        myCam.scale = 2 + (zoomThreshold - minDist) / zoomThreshold; //zoom dinamico
+		myCam.scale = 2 + (zoomThreshold - minDist) / zoomThreshold; //zoom dinamico
     } else {
         myCam.scale = 1;
+		myCam.position.y = 0;
     }
+	
+	//scala bloccata tra 1.. 2.5
+	myCam.scale = Math.min(2.5, Math.max(1, myCam.scale));
 
     //la camera segue sempre la navicella
-    myCam.position.x = shipCenterX - vpW/2 / myCam.scale;
+	let targetX = (shipCenterX - vpW/2 / myCam.scale);
+	let targetY = shipCenterY - vpH/2 / myCam.scale;
+	
+    myCam.position.x = targetX;
 	
 	//ma prima di 5 sec non devi zoommare!
 	if (Date.now() - startTime > 4000 && minDist < zoomThreshold)
-		myCam.position.y = shipCenterY - vpH/2 / myCam.scale;
+		myCam.position.y = targetY;
 }
 
 
@@ -414,8 +428,7 @@ function checkCollision() {
 
 
 
-
-
+//kaboom
 function explodeShip() {
     ship.alive = false;
     explosionSound.play();
@@ -429,8 +442,8 @@ function explodeShip() {
 		let lin = {};
 		lin.start = {x: -w * i / 30, y: -h * i / 30};
 		lin.end = {x: w * i / 30, y: h * i / 30};
-		lin.pos = new Vec(ship.position.x, ship.position.y + ship.size.height / 3);
-		lin.vel = new Vec(rnd(-2,2), rnd(-1,0.3));//-3,0 solo in alto
+		lin.pos = new Point(ship.position.x, ship.position.y + ship.size.height / 3);
+		lin.vel = new Point(rnd(-2,2), rnd(-1,0.3));//-3,0 solo in alto
 		lin.angle = rnd(0,360);
         lin.angularVel = rnd(-5,5); //velocita di rotazione
         lin.life = 50 + rnd(10,100);
@@ -442,14 +455,15 @@ function explodeShip() {
     shipSmoke = [];
     for(let i = 0; i < 50; i++) {
         shipSmoke.push({
-            pos: new Vec(ship.position.x, ship.position.y + ship.size.height / 2),
-            vel: new Vec(rnd(-1,1), rnd(-1,0.3)),//-1,0 solo in alto 
+            pos: new Point(ship.position.x, ship.position.y + ship.size.height / 2),
+            vel: new Point(rnd(-1,1), rnd(-1,0.3)),//-1,0 solo in alto 
             alpha: Math.random() * 3,
             size: rnd(0,4)
         });
     }
 }
 
+//aggiorna pezzi e palle :-)
 function updateShipPieces() {
     for(let i = shipPieces.length-1; i>=0; i--){
         const p = shipPieces[i];
@@ -489,7 +503,6 @@ function drawStars() {
 }
 
 //madreterra
-// Funzione per disegnare la Terra
 function drawEarth() {
 	if(!textureEnabled) return;
 	if(myCam.scale != 1) return;
@@ -561,6 +574,7 @@ function drawContinent(cx, cy, baseR, irregularity, points) {
     ctx.fill();
 }
 
+//grazie chatgpt
 function seededRandom(seed) {
     // hash veloce e deterministico
     seed = (seed ^ 0x6C8E9CF570932BD5) >>> 0;
@@ -569,80 +583,79 @@ function seededRandom(seed) {
 }
 
 
-
 //terreno lunare
 function drawTerrain() {
-    ctx.beginPath();
+	console.log('myCam: '+myCam.scale+' '+myCam.position.y);
+    ctx.save();
 	
-    const v0 = mainTerrain.vertices[0];
-    ctx.moveTo(
-        (v0.x - myCam.position.x) * myCam.scale,
-        (v0.y - myCam.position.y) * myCam.scale
-    );
+    //porta il canvas nello spazio mondo
+    ctx.scale(myCam.scale, myCam.scale);
+    ctx.translate(-myCam.position.x, -myCam.position.y);
 
-    for (let i = 1; i < mainTerrain.vertices.length; i++) {
+    ctx.beginPath();
+
+    const v0 = mainTerrain.vertices[0];
+    ctx.moveTo(v0.x, v0.y);
+	
+	//massimo y del terreno
+	let maxY = 0;
+    
+	for (let i = 1; i < mainTerrain.vertices.length; i++) {
         const v = mainTerrain.vertices[i];
-        ctx.lineTo(
-            (v.x - myCam.position.x) * myCam.scale,
-            (v.y - myCam.position.y) * myCam.scale
-        );
+        ctx.lineTo(v.x, v.y);
+		if(maxY < v.y) maxY = v.y;
     }
 
-    //chiudo il basso per colorare
+    //chiudi il terreno con un bottom fisso rispetto ai vertici
 	const last = mainTerrain.vertices[mainTerrain.vertices.length - 1];
-    const bottomY = vpH + 200; //molto sotto lo schermo
-
-    ctx.lineTo(
-        (last.x - myCam.position.x) * myCam.scale,
-        bottomY
-    );
-    ctx.lineTo(
-        (v0.x - myCam.position.x) * myCam.scale,
-        bottomY
-    );
+    const bottomY = maxY + 500;//vpH + 200
+	ctx.lineTo(last.x, bottomY);
+    ctx.lineTo(v0.x, bottomY);
     ctx.closePath();
+    
+    //pulizia da stelle che appaiono nel terreno
+    ctx.fillStyle = 'black';
+    ctx.fill();
 
-	//rimuove stelle dal terreno
-	ctx.fillStyle = 'black';
-	ctx.fill();
-	
-	if(textureEnabled) {
-		//gradiente lunare :-D
-		const grad = ctx.createLinearGradient(0, 0, 0, vpH);
-		grad.addColorStop(0, COLORS_ALPHA[currentColor].replace('xxx','0.2'));
-		grad.addColorStop(1, 'rgba(0,0,0,1)');
-		ctx.fillStyle = grad;
-		ctx.fill();
-		/*
-		ctx.globalCompositeOperation = 'luminosity';//'multiply';//multiply diventa trasparente
-		ctx.fillStyle = rockTexture;
-		ctx.fill();
-		ctx.globalCompositeOperation = 'source-over';
-		*/
-	}
-	
+    if (textureEnabled) {
+        //gradiente IN WORLD SPACE
+        const grad = ctx.createLinearGradient(
+            0, myCam.position.y,
+            0,myCam.position.y + vpH / myCam.scale
+        );
+
+        grad.addColorStop(0, COLORS_ALPHA[currentColor].replace('xxx','0.2'));
+        grad.addColorStop(1, 'rgba(0,0,0,1)');
+
+        ctx.fillStyle = grad;
+        ctx.fill();
+
+        //texture rocciosa che SCORRE col terreno (ASTEROIDS non lo fa?)
+        ctx.globalCompositeOperation = 'multiply';
+        ctx.fillStyle = rockTexture;
+        ctx.fill();
+        ctx.globalCompositeOperation = 'source-over';
+    }
+
     //contorno
     ctx.strokeStyle = COLORS[currentColor];
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 1 / myCam.scale;
     ctx.stroke();
 
-    //landing 
-    ctx.lineWidth = 2;
+    //landing lines
+    ctx.lineWidth = 2 / myCam.scale;
     for (const ll of mainTerrain.landingPlaces) {
-        const x1 = (ll.pointA.x - myCam.position.x) * myCam.scale;
-        const y1 = (ll.pointA.y - myCam.position.y) * myCam.scale;
-        const x2 = (ll.pointB.x - myCam.position.x) * myCam.scale;
-        const y2 = (ll.pointB.y - myCam.position.y) * myCam.scale;
-
         ctx.beginPath();
-        ctx.moveTo(x1, y1);
-        ctx.lineTo(x2, y2);
+        ctx.moveTo(ll.pointA.x, ll.pointA.y);
+        ctx.lineTo(ll.pointB.x, ll.pointB.y);
         ctx.stroke();
     }
-    ctx.lineWidth = 1;
+
+    ctx.restore();
 }
 
 
+//altitudine
 function getTerrainYAtX(x) {
     for (let i = 1; i < mainTerrain.vertices.length; i++) {
         const A = mainTerrain.vertices[i - 1];
@@ -656,7 +669,7 @@ function getTerrainYAtX(x) {
     return null;
 }
 
-
+//navetta
 function drawShip() {
     if(!ship.alive) return; //non disegnare se distrutta
 
@@ -799,8 +812,8 @@ function drawShip() {
 			if(isNearTerrain && shipSmoke.length < 50) {
 				for(let i = -1 ; i <= 1; i++) {
 					shipSmoke.push({
-						pos: new Vec(ship.position.x - i * ship.size.width / 4, terrainY),
-						vel: new Vec(rnd(-1,1), rnd(-0.1,0)),
+						pos: new Point(ship.position.x - i * ship.size.width / 4, terrainY),
+						vel: new Point(rnd(-1,1), rnd(-0.1,0)),
 						alpha: Math.random() * 2,
 						size: rnd(1,4)
 					});
@@ -835,6 +848,7 @@ function drawShip() {
     ctx.restore();
 }
 
+//god bless america!
 function drawUSFlag(w, h, x, y) {
 	if(!textureEnabled) return;
 	const fw = w * 0.16;   // larghezza bandiera
@@ -873,8 +887,7 @@ function drawUSFlag(w, h, x, y) {
 	}
 }
 
-
-
+//pezzetti e palle
 function drawShipPieces() {
     for(const p of shipPieces){
 		ctx.strokeStyle = p.color;
@@ -901,7 +914,7 @@ function drawShipPieces() {
     }
 }
 
-
+//statistiche in alto (erano in basso su Tranquility Base - TODO!)
 function drawStats(){
     ctx.fillStyle = COLORS[currentColor];
 	ctx.font='16px monospace'; 
@@ -931,17 +944,13 @@ function update(){
 
 		moveShip();
 		checkCollision();
-
-		//aggiorna terreno dinamicamente
 		updateTerrain();
-
 		updateCamera();
 		drawStars();
 		drawEarth();
 		drawTerrain();
 		drawShip();
 		drawStats();
-
 		updateShipPieces();
 		drawShipPieces();
 	}
