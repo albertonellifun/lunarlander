@@ -87,6 +87,18 @@ const engineSound = new Audio('engine.mp3'); engineSound.loop = true; engineSoun
 const explosionSound = new Audio('explosion.mp3'); explosionSound.loop = false; explosionSound.preload = 'auto';
 const landedSound = new Audio('landed.mp3'); landedSound.loop = false; landedSound.preload = 'auto';
 
+//real ship
+const shipImg = new Image(); shipImg.src = 'llander.png';
+let shipImgReady = false;
+shipImg.onload = () => {
+    shipImgReady = true;
+};
+const earthImg = new Image(); earthImg.src = 'earth.png';
+let earthImgReady = false;
+earthImg.onload = () => {
+    earthImgReady = true;
+};
+
 let currentColor = 0;//color change
 let COLORS = [
 	'#fff',//bianco
@@ -98,7 +110,7 @@ let COLORS_ALPHA = [
 	'rgba(0,255,0,xxx)',//verde
 	'rgba(255,128,0,xxx)'//arancio
 ];
-let textureEnabled = false;//texture switch
+let textureEnabled = 0;//texture switch
 let rockTexture = null;
 let scanLinesEnabled = true;//scanlines switch
 let paused = false;//pause switch
@@ -243,7 +255,7 @@ document.addEventListener('keydown', e=>{
     if(!keyList.includes(e.key)) keyList.push(e.key);
     if(e.key==='r' || e.key==='R') { resetGame(); }
 	if(e.key==='c' || e.key==='C') { currentColor = (currentColor+1)%COLORS.length; }
-	if(e.key==='t' || e.key==='T') { textureEnabled = !textureEnabled; }
+	if(e.key==='t' || e.key==='T') { textureEnabled = (textureEnabled + 1) % 3; }
 	if(e.key==='x' || e.key==='X') { scanLinesEnabled = !scanLinesEnabled; 
 		if (scanLinesEnabled) document.getElementById('scanlines-overlay').style.display = 'block';
 		else document.getElementById('scanlines-overlay').style.display = 'none';
@@ -338,8 +350,7 @@ function moveShip(){
 		} else {
 			return;
 		}
-	}
-	
+	}	
 	
     for(const key of keyList){
         if(key==='ArrowRight') ship.angle += 0.5;
@@ -424,7 +435,7 @@ function checkCollision() {
                     ship.speed.y = 0;
                     ship.angle = 0;
 					ship.landedAt = Date.now();
-					ship.canTakeOff = true;
+					setTimeout(function() { ship.canTakeOff = true; }, 2000);//dopo 5 secondi puoi decollare di nuovo!
 					landedSound.currentTime = 0;
 					landedSound.play();					
                     return;
@@ -526,15 +537,43 @@ function drawStars() {
     }
 }
 
+//madreterra real
+function drawRealEarth(x, y, r) {
+	if(!textureEnabled) return;
+	if(myCam.scale != 1) return;
+	
+	ctx.drawImage(earthImg, x - r, y - r, r*2, r*2);
+	
+	//atmosfera
+    ctx.beginPath();
+    ctx.arc(x, y, r - 2, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    ctx.lineWidth = 12;
+    ctx.stroke();
+	ctx.lineWidth = 1;
+	
+	//notte
+	const night = ctx.createRadialGradient(x - 10, y - 10, 10, x, y, r);
+    night.addColorStop(0, 'rgba(0,0,0,0)');
+    night.addColorStop(1, 'rgba(0,0,0,0.5)');
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = night;
+    ctx.fill();
+} 
+
 //madreterra
 function drawEarth() {
 	if(!textureEnabled) return;
 	if(myCam.scale != 1) return;
 	
-    const r = 40;
+	const r = 40;
     const x = vpW - 100;
     const y = 60;
 
+	if(textureEnabled === 2) return drawRealEarth(x, y, r);
+	
+    
     //oceano
     const ocean = ctx.createRadialGradient(x - 20, y - 20, 10, x, y, r);
 	ocean.addColorStop(0, '#4bf');//blu
@@ -557,9 +596,9 @@ function drawEarth() {
 	drawContinent(x + 20, y + 4, 10, 6, 12);//africa 
 	
 	//notte
-    const night = ctx.createRadialGradient(x + 40, y + 20, 10, x, y, r);
-    night.addColorStop(0, 'rgba(0,0,0,0.5)');
-    night.addColorStop(1, 'rgba(0,0,0,0.1)');
+    const night = ctx.createRadialGradient(x - 10, y - 10, 10, x, y, r);
+    night.addColorStop(0, 'rgba(0,0,0,0)');
+    night.addColorStop(1, 'rgba(0,0,0,0.5)');
 
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -568,7 +607,7 @@ function drawEarth() {
 
     //atmosfera
     ctx.beginPath();
-    ctx.arc(x, y, r - 4, 0, Math.PI * 2);
+    ctx.arc(x, y, r - 2, 0, Math.PI * 2);
     ctx.strokeStyle = 'rgba(255,255,255,0.2)';
     ctx.lineWidth = 6;
     ctx.stroke();
@@ -693,9 +732,10 @@ function getTerrainYAtX(x) {
     return null;
 }
 
-//navetta
-function drawShip() {
-    if(!ship.alive) return; //non disegnare se distrutta
+
+//real ship
+function drawRealShip() {
+	if(!ship.alive) return; //non disegnare se distrutta
 
     const centerX = (ship.position.x - myCam.position.x) * myCam.scale;
     const centerY = (ship.position.y - myCam.position.y) * myCam.scale;
@@ -706,104 +746,17 @@ function drawShip() {
 	ctx.translate(centerX, centerY);
 	ctx.scale(myCam.scale, myCam.scale);
 	ctx.rotate(degToRad(ship.angle));
-	
-	ctx.lineWidth = 1;
 
-	//hitbox
-	//ctx.strokeStyle = 'red';
-	//ctx.strokeRect(
-	//	-ship.size.width / 2,
-	//	-ship.size.height / 2,
-	//	ship.size.width,
-	//	ship.size.height
-	//);
-	
-	// ottagono
-	ctx.strokeStyle = textureEnabled ? '#320' : COLORS[currentColor];
-	const radius = w * 0.3;
-	const sides = 8;
-	const step = (Math.PI * 2) / sides;
-	const startAngle = 2.4;
-	const endAngle   = 7.0;
-	
-	ctx.beginPath();
-	for (let angle = startAngle; angle < endAngle + 0.21; angle += step) {
-		const x = Math.cos(angle) * radius;
-		const y = Math.sin(angle) * radius - h * 0.2;
-		
-		if (angle === startAngle) ctx.moveTo(x, y);
-		else ctx.lineTo(x, y);
-	}
-	ctx.closePath();
-	if(textureEnabled) {
-		const gradCenterX = -w * 0.2;
-		const gradCenterY = -h * 0.5;
-		const ballGradient = ctx.createRadialGradient(
-			gradCenterX, gradCenterY, radius * 0.1,// centro piccolo (oro)
-			gradCenterX, gradCenterY, radius * 2 // bordo
-		);
-		ballGradient.addColorStop(0.0, '#fd0');//gold come la tuta gold
-		ballGradient.addColorStop(1.0, '#000');
-		ctx.fillStyle = ballGradient;
-		ctx.fill();
-	}
-	
-	ctx.stroke();
-	//taglia eventuali segmenti che vanno oltre
-	ctx.beginPath();
-	ctx.fillStyle= textureEnabled ? '#ddd' : '#000';
-	ctx.fillRect(-w*0.25, 0, w*0.5, h*0.20);
-	
-
-    //rettangolo
-	ctx.strokeStyle = textureEnabled ? '#ccc' : COLORS[currentColor];
-	ctx.strokeRect(-w*0.25, 0, w*0.5, h*0.20);
-	ctx.moveTo(-w*0.25, h*0.1);
-	ctx.lineTo(w*0.25, h*0.1);
-	ctx.stroke();
-	ctx.moveTo(0,0);
-	ctx.lineTo(0,h*0.2);
-	ctx.stroke();
-	
-
-    //zampette atterraggio
-	//sx
-	ctx.strokeStyle = textureEnabled ? '#ccc' : COLORS[currentColor];
-    ctx.beginPath();
-    ctx.moveTo(-w*0.20, h*0.20);
-    ctx.lineTo(-w*0.40, h*0.47);
-	ctx.lineTo(-w*0.25, h*0.1);
-	ctx.closePath();
-	ctx.fill();
-	ctx.stroke();
-	
-	//piede sx
-	ctx.beginPath();
-	ctx.fillRect(-w*0.5, h*0.5, w*0.15, h*0.02);
-	ctx.strokeRect(-w*0.5, h*0.5, w*0.15, h*0.02);
-	ctx.closePath();
-	ctx.fill();	
-	ctx.stroke();
-	
-	//dx
-    ctx.beginPath();
-    ctx.moveTo(w*0.20, h*0.20);
-    ctx.lineTo(w*0.40, h*0.47);
-	ctx.lineTo(w*0.25, h*0.1);
-	ctx.closePath();
-	ctx.fill();
-	ctx.stroke();
-	
-	//piede dx
-	ctx.beginPath();
-	ctx.fillRect(w*0.35, h*0.5, w*0.15, h*0.02);
-	ctx.strokeRect(w*0.35, h*0.5, w*0.15, h*0.02);
-	ctx.closePath();
-	ctx.fill();	
-	ctx.stroke();
-	
+	ctx.drawImage(shipImg, -w / 2, -h / 2, w, h);
 	
 	//FIAMMONE CLAMOROSO
+	drawClamorousFlame(w, h);	
+
+	ctx.restore();
+}
+
+//ECCOLO IL FIAMMONE CLAMOROSO!
+function drawClamorousFlame(w, h){
 	if (fuel > 0 && !ship.landed) {
 		const flameStr = keyList.includes('ArrowUp') ? 0.75 : 0.1;
 		const flameLen = h * (flameStr + Math.random() * flameStr);//fiamma alta
@@ -857,6 +810,150 @@ function drawShip() {
 			}
 		}
 	}
+}
+
+
+//navetta
+function drawShip() {
+	if(textureEnabled === 2) return drawRealShip();
+    
+	if(!ship.alive) return; //non disegnare se distrutta
+
+    const centerX = (ship.position.x - myCam.position.x) * myCam.scale;
+    const centerY = (ship.position.y - myCam.position.y) * myCam.scale;
+    const w = ship.size.width;
+    const h = ship.size.height;
+
+    ctx.save();
+	ctx.translate(centerX, centerY);
+	ctx.scale(myCam.scale, myCam.scale);
+	ctx.rotate(degToRad(ship.angle));
+
+	ctx.lineWidth = 1;
+
+	//hitbox
+	//ctx.strokeStyle = 'red';
+	//ctx.strokeRect(
+	//	-ship.size.width / 2,
+	//	-ship.size.height / 2,
+	//	ship.size.width,
+	//	ship.size.height
+	//);
+	
+	// ottagono
+	ctx.strokeStyle = textureEnabled ? '#320' : COLORS[currentColor];
+	const radius = w * 0.3;
+	const sides = 8;
+	const step = (Math.PI * 2) / sides;
+	const startAngle = 2.4;
+	const endAngle   = 7.0;
+	
+	ctx.beginPath();
+	for (let angle = startAngle; angle < endAngle + 0.21; angle += step) {
+		const x = Math.cos(angle) * radius;
+		const y = Math.sin(angle) * radius - h * 0.2;
+		
+		if (angle === startAngle) ctx.moveTo(x, y);
+		else ctx.lineTo(x, y);
+	}
+	ctx.closePath();
+	if(textureEnabled) {
+		const gradCenterX = -w * 0.2;
+		const gradCenterY = -h * 0.5;
+		const ballGradient = ctx.createRadialGradient(
+			gradCenterX, gradCenterY, radius * 0.1,// centro piccolo (oro)
+			gradCenterX, gradCenterY, radius * 2 // bordo
+		);
+		ballGradient.addColorStop(0.0, '#fd0');//gold come la tuta gold
+		ballGradient.addColorStop(1.0, '#000');
+		ctx.fillStyle = ballGradient;
+		ctx.fill();
+	}	
+	ctx.stroke();
+	
+	//taglia eventuali segmenti che vanno oltre
+	ctx.beginPath();
+	ctx.fillStyle= textureEnabled ? '#ddd' : '#000';
+	ctx.fillRect(-w*0.25, 0, w*0.5, h*0.20);
+	
+
+    //rettangolo
+	ctx.beginPath();
+	ctx.strokeStyle = textureEnabled ? '#ccc' : COLORS[currentColor];
+	ctx.strokeRect(-w*0.25, 0, w*0.5, h*0.20);
+	ctx.beginPath();
+	ctx.moveTo(-w*0.25, h*0.1);//---- orizz sx
+	ctx.lineTo(-w*0.05, h*0.1);
+	ctx.stroke();
+	ctx.beginPath();
+	ctx.moveTo(w*0.25, h*0.1);//---- orizz dx
+	ctx.lineTo(w*0.05, h*0.1);
+	ctx.stroke();
+	
+	if(textureEnabled) {
+		ctx.fillStyle='#999';
+		ctx.fillRect(-w*0.06, h*0.1, -w*0.2, h*0.1);
+		ctx.fillRect(w*0.06, h*0.1, w*0.2, h*0.1);
+		
+		//USA flag
+		drawUSFlag(-w * 0.24, h * 0.01, w * 0.18);
+	}
+	
+	
+	ctx.beginPath();
+	ctx.moveTo(-w*0.05, 0);//--|---|-- a sx
+	ctx.lineTo(-w*0.05, h*0.2);
+	ctx.stroke();
+	ctx.beginPath();
+	ctx.moveTo(w*0.05, 0);//--|---|-- a dx
+	ctx.lineTo(w*0.05, h*0.2);
+	ctx.stroke();
+	
+	//ctx.moveTo(0,0);///--|-- al centro
+	//ctx.lineTo(0,h*0.2);
+	//ctx.stroke();
+	
+
+    //zampette atterraggio
+	//sx
+	ctx.strokeStyle = textureEnabled ? '#ccc' : COLORS[currentColor];
+	ctx.fillStyle= textureEnabled ? '#ddd' : '#000';
+    ctx.beginPath();
+    ctx.moveTo(-w*0.20, h*0.20);
+    ctx.lineTo(-w*0.40, h*0.47);
+	ctx.lineTo(-w*0.25, h*0.1);
+	ctx.closePath();
+	ctx.fill();
+	ctx.stroke();
+	
+	//piede sx
+	ctx.beginPath();
+	ctx.fillRect(-w*0.5, h*0.5, w*0.15, h*0.02);
+	ctx.strokeRect(-w*0.5, h*0.5, w*0.15, h*0.02);
+	ctx.closePath();
+	ctx.fill();	
+	ctx.stroke();
+	
+	//dx
+    ctx.beginPath();
+    ctx.moveTo(w*0.20, h*0.20);
+    ctx.lineTo(w*0.40, h*0.47);
+	ctx.lineTo(w*0.25, h*0.1);
+	ctx.closePath();
+	ctx.fill();
+	ctx.stroke();
+	
+	//piede dx
+	ctx.beginPath();
+	ctx.fillRect(w*0.35, h*0.5, w*0.15, h*0.02);
+	ctx.strokeRect(w*0.35, h*0.5, w*0.15, h*0.02);
+	ctx.closePath();
+	ctx.fill();	
+	ctx.stroke();
+	
+	
+	//FIAMMONE CLAMOROSO
+	drawClamorousFlame(w, h);
 	
 	//aggiunta terza gamba (rocco approved!)
 	//cx
@@ -879,16 +976,12 @@ function drawShip() {
 	ctx.fill();	
 	ctx.stroke();
 
-	//USA flag
-	drawUSFlag(w*1.5, h*1.2, -w * 0.24, h * 0.01);
-
     ctx.restore();
 }
 
 //god bless america!
-function drawUSFlag(w, h, x, y) {
+function drawUSFlag(x, y, fw) {
 	if(!textureEnabled) return;
-	const fw = w * 0.16;   // larghezza bandiera
 	const fh = fw * 0.4;   // rapporto 1/4
 
 	//sfondo bianco
