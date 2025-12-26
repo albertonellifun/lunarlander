@@ -61,9 +61,13 @@ let shipSize = 50;//dimensioni navetta
 let ship = { 	position: new Point(vpW/2,shipSize), 
 				size: { width:shipSize, height:shipSize}, 
 				speed: new Point(0,0), 
-				angle:0, 
-				alive:true, 
-				landed:false };
+				angle: 0, 
+				alive: true, 
+				landed: false,
+				landedAt: 0,//timestamp atterraggio
+				canTakeOff: false//pronto al decollo
+				};
+
 let mainTerrain={ vertices:[], landingPlaces:[] };//terreno
 let myCam={ position:new Point(0,0), scale:1 };//telecamera (aargh!)
 let keyList = [];
@@ -81,6 +85,7 @@ let starsList = [];//stelle
 //audio
 const engineSound = new Audio('engine.mp3'); engineSound.loop = true; engineSound.preload = 'auto';
 const explosionSound = new Audio('explosion.mp3'); explosionSound.loop = false; explosionSound.preload = 'auto';
+const landedSound = new Audio('landed.mp3'); landedSound.loop = false; landedSound.preload = 'auto';
 
 let currentColor = 0;//color change
 let COLORS = [
@@ -265,16 +270,18 @@ window.addEventListener('resize',()=>{
 
 //reset
 function resetGame(){
-    fuel=999; 
-	startTime=Date.now();
+    fuel = 999; 
+	startTime = Date.now();
     ship.position = new Point(vpW/2,shipSize);
     ship.speed = new Point(0,0);
-    ship.angle=0; 
-	ship.alive=true;
-    ship.landed=false; 
+    ship.angle = 0; 
+	ship.alive = true;
+    ship.landed = false; 
+	ship.canTakeOff = false;
+	ship.landedAt = 0;
 	shipPieces = [];//kaboom
 	shipSmoke = [];//nuvoletta
-	myCam={ position:new Point(0,0), scale:1 };
+	myCam={ position: new Point(0,0), scale: 1 };
     createTerrain();
     createStars();
 	rockTexture = generateRockTexture();
@@ -320,7 +327,20 @@ function updateCamera() {
 //movimento navetta
 function moveShip(){
     if(!ship.alive) return;
-	if(ship.landed) return;//voglio poter ripartire?
+	//if(ship.landed) return;//voglio poter ripartire?
+	if (ship.landed) {
+		if (ship.canTakeOff && keyList.includes('ArrowUp') && fuel > 0) {
+			ship.landed = false;
+			ship.canTakeOff = false;
+			landedSound.pause();
+			engineSound.currentTime = 0;
+			engineSound.play();
+		} else {
+			return;
+		}
+	}
+	
+	
     for(const key of keyList){
         if(key==='ArrowRight') ship.angle += 0.5;
         if(key==='ArrowLeft') ship.angle -= 0.5;
@@ -403,6 +423,10 @@ function checkCollision() {
                     ship.speed.x = 0;
                     ship.speed.y = 0;
                     ship.angle = 0;
+					ship.landedAt = Date.now();
+					ship.canTakeOff = true;
+					landedSound.currentTime = 0;
+					landedSound.play();					
                     return;
                 } else {
                     explodeShip();
@@ -744,6 +768,7 @@ function drawShip() {
 
     //zampette atterraggio
 	//sx
+	ctx.strokeStyle = textureEnabled ? '#ccc' : COLORS[currentColor];
     ctx.beginPath();
     ctx.moveTo(-w*0.20, h*0.20);
     ctx.lineTo(-w*0.40, h*0.47);
@@ -784,7 +809,8 @@ function drawShip() {
 		const flameLen = h * (flameStr + Math.random() * flameStr);//fiamma alta
 		const flameW  = w * 0.15;//fiamma stretta
 
-		const grad = ctx.createRadialGradient(0, h*0.15, 2, 0, h*0.25, flameLen);
+		const grad = ctx.createRadialGradient(0, h*0.15, 2,//x0, y0, r0
+											  0, h*0.25, flameLen);//x1, y1, r1
 		if(textureEnabled) {
 			grad.addColorStop(0, 'rgba(255,255,255,0.9)');
 			grad.addColorStop(0.33, 'rgba(255,200,50,0.9)');
@@ -795,24 +821,34 @@ function drawShip() {
 			grad.addColorStop(1, COLORS_ALPHA[currentColor].replace('xxx','0'));
 		}
 
+		//aggiunto un punto medio di fiamma largo ma random
+		let pmx = flameW * 0.75 + rnd(0, flameW * 0.5);
+		let pmy = h * 0.2 + flameLen * 0.2;
+		
 		ctx.fillStyle = grad;
 		ctx.beginPath();
 		ctx.moveTo(-flameW, h*0.2 + 0.5);
+		ctx.lineTo(-pmx, pmy);//aggiunto un punto medio imprevedibile
 		ctx.lineTo(0, h*0.2 + flameLen);
+		ctx.lineTo(pmx, pmy);
 		ctx.lineTo(flameW, h*0.2 + 0.5);
 		ctx.closePath();
 		ctx.fill();
+		//bordo fiamma?
+		ctx.strokeStyle = textureEnabled ? 'rgba(128,0,0,0.2)' : COLORS_ALPHA[currentColor].replace('xxx','0.2');
+		ctx.stroke();
 		
 		//se sto a manetta
 		if(keyList.includes('ArrowUp')) {
 			//... e sto vicino al terreno
 			let terrainY = getTerrainYAtX(ship.position.x);
-			let isNearTerrain = (terrainY - ship.position.y - ship.size.height/2) < (3 * ship.size.height / 4);
+			let isNearTerrain = (terrainY - ship.position.y - ship.size.height/2) < ship.size.height;
 			//... e non ho gia un polverone che levati proprio
 			if(isNearTerrain && shipSmoke.length < 50) {
 				for(let i = -1 ; i <= 1; i++) {
+					//aggiunto angolo alla posizione per spostare fumo quando nave inclinata
 					shipSmoke.push({
-						pos: new Point(ship.position.x - i * ship.size.width / 4, terrainY),
+						pos: new Point(ship.position.x - i * ship.size.width / 4 - ship.angle, terrainY),
 						vel: new Point(rnd(-1,1), rnd(-0.1,0)),
 						alpha: Math.random() * 2,
 						size: rnd(1,4)
@@ -824,6 +860,7 @@ function drawShip() {
 	
 	//aggiunta terza gamba (rocco approved!)
 	//cx
+	ctx.strokeStyle = textureEnabled ? '#ccc' : COLORS[currentColor];
 	ctx.fillStyle=textureEnabled ? '#ddd' : '#000';
 	ctx.beginPath();
 	ctx.moveTo(-w*0.05, h*0.20);
