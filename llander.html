@@ -435,7 +435,7 @@ function checkCollision() {
                     ship.speed.y = 0;
                     ship.angle = 0;
 					ship.landedAt = Date.now();
-					setTimeout(function() { ship.canTakeOff = true; }, 2000);//dopo 5 secondi puoi decollare di nuovo!
+					setTimeout(function() { ship.canTakeOff = true; }, 5000);//dopo 5 secondi puoi decollare di nuovo!
 					landedSound.currentTime = 0;
 					landedSound.play();					
                     return;
