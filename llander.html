@@ -55,13 +55,13 @@ class Star 			{ constructor(pos,alpha){ this.pos=pos; this.alpha=alpha; } }
 
 //game status
 let frames = 0;
-let fuel = 999;//quanto carburante 
 let startTime = Date.now();
 let shipSize = 50;//dimensioni navetta
 let ship = { 	position: new Point(vpW/2,shipSize), 
 				size: { width:shipSize, height:shipSize}, 
 				speed: new Point(0,0), 
 				angle: 0, 
+				fuel: 999,//quanto carburante a bordo
 				alive: true, 
 				landed: false,
 				landedAt: 0,//timestamp atterraggio
@@ -78,7 +78,8 @@ let tdelta = 15;//quanto accidentato il terreno
 let minLandingSpeed = 0.5;
 let minLandingAngle = 5;
 let landingSize = 1.5;//quanto larghe le piazzole di sosta
-let maxSpeed = 2;//velocita max
+let maxSpeed = 2.5;//velocita max
+let godMode = false;
 
 let starsList = [];//stelle
 
@@ -256,13 +257,14 @@ document.addEventListener('keydown', e=>{
     if(e.key==='r' || e.key==='R') { resetGame(); }
 	if(e.key==='c' || e.key==='C') { currentColor = (currentColor+1)%COLORS.length; }
 	if(e.key==='t' || e.key==='T') { textureEnabled = (textureEnabled + 1) % 3; }
+	if(e.key==='g' || e.key==='G') { godMode = !godMode; }
 	if(e.key==='x' || e.key==='X') { scanLinesEnabled = !scanLinesEnabled; 
 		if (scanLinesEnabled) document.getElementById('scanlines-overlay').style.display = 'block';
 		else document.getElementById('scanlines-overlay').style.display = 'none';
 	}
 	if(e.key==='p' || e.key==='P') { paused = !paused;}
 	
-    if(e.key==='ArrowUp' && fuel > 0 && engineSound.paused && !ship.landed && ship.alive){ engineSound.currentTime=0; engineSound.play(); }
+    if(e.key==='ArrowUp' && ship.fuel > 0 && engineSound.paused && !ship.landed && ship.alive){ engineSound.currentTime=0; engineSound.play(); }
 });
 
 document.addEventListener('keyup', e=>{
@@ -282,7 +284,7 @@ window.addEventListener('resize',()=>{
 
 //reset
 function resetGame(){
-    fuel = 999; 
+    ship.fuel = 999; 
 	startTime = Date.now();
     ship.position = new Point(vpW/2,shipSize);
     ship.speed = new Point(0,0);
@@ -320,7 +322,7 @@ function updateCamera() {
 		myCam.position.y = 0;
     }
 	
-	//scala bloccata tra 1.. 2.5
+	//scala bloccata tra 1..2.5
 	myCam.scale = Math.min(2.5, Math.max(1, myCam.scale));
 
     //la camera segue sempre la navicella
@@ -341,7 +343,7 @@ function moveShip(){
     if(!ship.alive) return;
 	//if(ship.landed) return;//voglio poter ripartire?
 	if (ship.landed) {
-		if (ship.canTakeOff && keyList.includes('ArrowUp') && fuel > 0) {
+		if (ship.canTakeOff && keyList.includes('ArrowUp') && ship.fuel > 0) {
 			ship.landed = false;
 			ship.canTakeOff = false;
 			landedSound.pause();
@@ -355,8 +357,8 @@ function moveShip(){
     for(const key of keyList){
         if(key==='ArrowRight') ship.angle += 0.5;
         if(key==='ArrowLeft') ship.angle -= 0.5;
-        if(key==='ArrowUp' && fuel > 0){
-            fuel = Math.max(0, fuel - 1);
+        if(key==='ArrowUp' && ship.fuel > 0){
+            if (!godMode) ship.fuel = Math.max(0, ship.fuel - 1);
             ship.speed.x += Math.sin(degToRad(ship.angle))*0.0175;
             ship.speed.y -= Math.cos(degToRad(ship.angle))*0.0175;
         } 
@@ -367,9 +369,9 @@ function moveShip(){
     ship.position.x += ship.speed.x;
     ship.position.y += ship.speed.y;
 	//consumo fuel a prescindere dalla manetta, spegne i motori quando atterra
-	if (fuel > 0 && !ship.landed) {
-		fuel = Math.max(0, fuel - 0.002);
-	} else if (fuel <= 0) {
+	if (ship.fuel > 0 && !ship.landed) {
+		if (!godMode) ship.fuel = Math.max(0, ship.fuel - 0.002);
+	} else if (ship.fuel <= 0) {
 		engineSound.pause();
 	}
 }
@@ -440,7 +442,7 @@ function checkCollision() {
 					landedSound.play();					
                     return;
                 } else {
-                    explodeShip();
+                    if (!godMode) explodeShip();
                     return;
                 }
             }
@@ -454,7 +456,7 @@ function checkCollision() {
 
         for (const e of edges) {
             if (segmentsIntersect(e[0], e[1], A, B)) {
-                explodeShip();
+                if (!godMode) explodeShip();
                 return;
             }
         }
@@ -757,7 +759,7 @@ function drawRealShip() {
 
 //ECCOLO IL FIAMMONE CLAMOROSO!
 function drawClamorousFlame(w, h, deltaY){
-	if (fuel > 0 && !ship.landed) {
+	if (ship.fuel > 0 && !ship.landed) {
 		const flameStr = keyList.includes('ArrowUp') ? 0.75 : 0.1;
 		const flameLen = h * (flameStr + Math.random() * flameStr);//fiamma alta
 		const flameW  = w * 0.15;//fiamma stretta
@@ -837,6 +839,8 @@ function drawShip() {
 	//ctx.strokeStyle = 'red';
 	//ctx.strokeRect( -ship.size.width / 2, -ship.size.height / 2, ship.size.width, ship.size.height );
 	
+	let golden = '#f80';//'#ccc';
+	
 	//ottagono (angolo parte da destra, sotto, sinistra, alto... sigh!
 	ctx.strokeStyle = textureEnabled ? '#444' : COLORS[currentColor];
 	const radius = w * 0.28;
@@ -872,77 +876,76 @@ function drawShip() {
 	//taglia eventuali segmenti che vanno oltre
 	ctx.beginPath();
 	ctx.fillStyle= textureEnabled ? '#ddd' : '#000';
-	ctx.fillRect(-w*0.3, 0, w*0.6, h*0.20);
+	ctx.fillRect(-w*0.22, 0, w*0.44, h*0.20);
+	
+	//parte alta rettangolo grigia scura
+	if (textureEnabled) {
+		ctx.fillStyle='#222';
+		ctx.fillRect(-w*0.22, 0, w*0.44, h*0.14);
+	}
 	
     //rettangolo
 	ctx.beginPath();
-	ctx.strokeStyle = textureEnabled ? '#ccc' : COLORS[currentColor];
-	ctx.strokeRect(-w*0.3, 0, w*0.6, h*0.20);
+	ctx.strokeStyle = textureEnabled ? '#ddd' : COLORS[currentColor];
+	ctx.strokeRect(-w*0.22, 0, w*0.44, h*0.20);
 	ctx.beginPath();
-	ctx.moveTo(-w*0.3, h*0.1);//---- orizz sx
-	ctx.lineTo(-w*0.05, h*0.1);
+	ctx.moveTo(-w*0.22, h*0.14);//---- orizz sx
+	ctx.lineTo(-w*0.05, h*0.14);
 	ctx.stroke();
 	ctx.beginPath();
-	ctx.moveTo(w*0.3, h*0.1);//---- orizz dx
-	ctx.lineTo(w*0.05, h*0.1);
+	ctx.moveTo(w*0.22, h*0.14);//---- orizz dx
+	ctx.lineTo(w*0.05, h*0.14);
 	ctx.stroke();
 	
 	if(textureEnabled) {
-		ctx.fillStyle='#999';
-		ctx.fillRect(-w*0.06, h*0.1, -w*0.2, h*0.1);
-		ctx.fillRect(w*0.06, h*0.1, w*0.2, h*0.1);
-		
 		//USA flag
-		drawUSFlag(-w * 0.24, h * 0.01, w * 0.18);
+		drawUSFlag(-w * 0.20, h * 0.04, w * 0.14);
 	}
-	
+	//righe verticali
 	ctx.beginPath();
 	ctx.moveTo(-w*0.05, 0);//--|---|-- a sx
-	ctx.lineTo(-w*0.05, h*0.2);
+	ctx.lineTo(-w*0.05, h*0.14);
 	ctx.stroke();
 	ctx.beginPath();
 	ctx.moveTo(w*0.05, 0);//--|---|-- a dx
-	ctx.lineTo(w*0.05, h*0.2);
+	ctx.lineTo(w*0.05, h*0.14);
 	ctx.stroke();
 	
     //zampette atterraggio
 	//sx
-	ctx.strokeStyle = textureEnabled ? '#ccc' : COLORS[currentColor];
-	ctx.fillStyle= textureEnabled ? '#ddd' : '#000';
-    ctx.beginPath();
-	ctx.moveTo(-w*0.3, h*0.1);//alto
-	ctx.lineTo(-w*0.4, h*0.47);//centro piede
-	ctx.lineTo(-w*0.35, h*0.3);//medio
-	ctx.lineTo(-w*0.2, h*0.2);//attacco interno
+	ctx.strokeStyle = textureEnabled ? golden : COLORS[currentColor];
+	ctx.beginPath();
+	ctx.moveTo(-w*0.22, 0);//attacco alto
+	ctx.lineTo(-w*0.33, h*0.09);//alto
+	ctx.lineTo(-w*0.45, h*0.47);//centro piede
+	ctx.lineTo(-w*0.39, h*0.3);//medio
+	ctx.lineTo(-w*0.23, h*0.2);//attacco interno
+	ctx.lineTo(-w*0.33, h*0.09);//alto
 	ctx.closePath();
-	ctx.fill();
 	ctx.stroke();
 	
 	//piede sx
 	ctx.beginPath();
-	ctx.fillRect(-w*0.5, h*0.5, w*0.15, -h*0.02);
-	ctx.strokeRect(-w*0.5, h*0.5, w*0.15, -h*0.02);
-	ctx.closePath();
-	ctx.fill();	
-	ctx.stroke();
+	ctx.fillStyle= textureEnabled ? golden : '#000';
+	ctx.fillRect(-w*0.5, h*0.5, w*0.10, -h*0.02);
+	ctx.strokeRect(-w*0.5, h*0.5, w*0.10, -h*0.02);
 	
 	//dx
-    ctx.beginPath();ctx.beginPath();
-	ctx.moveTo(w*0.3, h*0.1);//alto
-	ctx.lineTo(w*0.4, h*0.47);//centro piede
-	ctx.lineTo(w*0.35, h*0.3);//medio
-	ctx.lineTo(w*0.2, h*0.2);//attacco interno
-	ctx.closePath();
-	ctx.fill();
+	ctx.strokeStyle = textureEnabled ? golden : COLORS[currentColor];
+	ctx.beginPath();
+	ctx.moveTo(w*0.22, 0);//attacco alto
+	ctx.lineTo(w*0.33, h*0.09);//alto
+	ctx.lineTo(w*0.45, h*0.47);//centro piede
+	ctx.lineTo(w*0.39, h*0.3);//medio
+	ctx.lineTo(w*0.23, h*0.2);//attacco interno
+	ctx.lineTo(w*0.33, h*0.09);//alto
 	ctx.stroke();
 	
 	//piede dx
 	ctx.beginPath();
-	ctx.fillRect(w*0.35, h*0.5, w*0.15, -h*0.02);
-	ctx.strokeRect(w*0.35, h*0.5, w*0.15, -h*0.02);
-	ctx.closePath();
-	ctx.fill();	
-	ctx.stroke();
+	ctx.fillStyle= textureEnabled ? golden : '#000';
+	ctx.fillRect(w*0.5, h*0.5, -w*0.10, -h*0.02);
+	ctx.strokeRect(w*0.5, h*0.5, -w*0.10, -h*0.02);
 	
 	
 	//FIAMMONE CLAMOROSO
@@ -950,32 +953,38 @@ function drawShip() {
 	
 	//aggiunta terza gamba (rocco approved!)
 	//cx
-	ctx.strokeStyle = textureEnabled ? '#ccc' : COLORS[currentColor];
-	ctx.fillStyle=textureEnabled ? '#ddd' : '#000';
 	ctx.beginPath();
-	ctx.moveTo(-w*0.05, h*0.20);
+	ctx.strokeStyle = textureEnabled ? golden : COLORS[currentColor];
+	ctx.moveTo(-w*0.08, h*0.20);
+	ctx.lineTo(0, h*0.3);
 	ctx.lineTo(0, h*0.47);
-	ctx.lineTo(w*0.05, h*0.20);
-	ctx.lineTo(0, h*0.1);
-	ctx.lineTo(-w*0.05, h*0.20);
-	ctx.fill();
+	ctx.lineTo(0, h*0.3);
+	ctx.lineTo(w*0.08, h*0.20);
+	ctx.stroke();
+	
+	ctx.beginPath();
+	ctx.strokeStyle = textureEnabled ? golden : COLORS[currentColor];
+	ctx.moveTo(w*0.08,h*0.20);
+	ctx.lineTo(0, h*0.05);//centro
+	ctx.lineTo(-w*0.08, h*0.20);
+	ctx.lineTo(0, h*0.05);
+	ctx.lineTo(0, h*0.47);
 	ctx.stroke();
 	
 	//piede cx
 	ctx.beginPath();
+	ctx.strokeStyle = textureEnabled ? golden : COLORS[currentColor];
+	ctx.fillStyle= textureEnabled ? golden : '#000';
 	ctx.fillRect(-w*0.05,h*0.5,w*0.1,-h*0.02);
 	ctx.strokeRect(-w*0.05,h*0.5,w*0.1,-h*0.02);
-	ctx.closePath();
-	ctx.fill();	
-	ctx.stroke();
-
+	
     ctx.restore();
 }
 
 //god bless america!
 function drawUSFlag(x, y, fw) {
 	if(!textureEnabled) return;
-	const fh = fw * 0.4;   // rapporto 1/4
+	const fh = fw * 0.5;   // rapporto 1/2
 
 	//sfondo bianco
 	ctx.fillStyle = textureEnabled ? '#fff' : COLORS[currentColor];
@@ -1040,19 +1049,19 @@ function drawShipPieces() {
 //statistiche in alto (erano in basso su Tranquility Base - TODO!)
 function drawStats(){
     ctx.fillStyle = COLORS[currentColor];
-	ctx.font='16px monospace'; 
-	ctx.textAlign='left';
+	ctx.font = '16px monospace'; 
+	ctx.textAlign = 'left';
 	let x1 = 16;
 	let x2 = vpW/2 - 48;
-	let x3 = vpW - 96;
-    ctx.fillText(`FUEL: ${fuel.toFixed(1)}`,x1,16);
-    ctx.fillText(`ANGLE: ${ship.angle.toFixed(2)}`,x1,32);
-	ctx.fillText(`ALT: ${(getTerrainYAtX(ship.position.x) - ship.position.y - ship.size.height/2).toFixed(2)}`,x1,48);	
+	let x3 = vpW - 108;
+    ctx.fillText(`FUEL: ${ship.fuel.toFixed(1)} LBS`,x1,16);
+    ctx.fillText(`ANGLE: ${ship.angle.toFixed(2)} DEG`,x1,32);
+	ctx.fillText(`ALT: ${(getTerrainYAtX(ship.position.x) - ship.position.y - ship.size.height/2).toFixed(2)} M`,x1,48);	
 	
 	ctx.fillText(`PX: ${ship.position.x.toFixed(2)}`,x2,16);
 	ctx.fillText(`PY: ${ship.position.y.toFixed(2)}`,x2,32);	
-	ctx.fillText(`VX: ${ship.speed.x.toFixed(2)}`,x3,16);
-	ctx.fillText(`VY: ${ship.speed.y.toFixed(2)}`,x3,32);	
+	ctx.fillText(`VX: ${ship.speed.x.toFixed(2)} M/S`,x3,16);
+	ctx.fillText(`VY: ${ship.speed.y.toFixed(2)} M/S`,x3,32);	
 	
 	ctx.fillText(`Lunar Lander / Tranquility Base - Apple ][ clone`,x1,vpH - 16);
 	ctx.fillText(`[P]ause - [R]eset - [C]olor - [T]exture - [X]canlines toggle`,vpW-540,vpH - 16);
