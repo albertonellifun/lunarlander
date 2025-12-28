@@ -357,6 +357,7 @@ function moveShip(){
 		if (ship.canTakeOff && keyList.includes('ArrowUp') && ship.fuel > 0) {
 			ship.landed = false;
 			ship.canTakeOff = false;
+			ship.position.y -= 1;//altrimenti collisione == nuovo atterraggio
 			landedSound.pause();
 			engineSound.currentTime = 0;
 			engineSound.play();
@@ -418,6 +419,12 @@ function segmentsIntersect(a,b,c,d){
 
 function checkCollision() {
     if (!ship.alive || ship.landed) return;
+	
+	//esplode se troppo in alto
+	if(ship.position.y < -1000) {
+		if (!godMode) explodeShip();
+		else { ship.speed.x = 0; ship.speed.y = 0; ship.position.y = -999; }
+	}
 
     const box = getShipOBB();
 
@@ -495,20 +502,20 @@ function explodeShip() {
 		lin.pos = new Point(ship.position.x, ship.position.y + ship.size.height / 3);
 		lin.vel = new Point(rnd(-2,2), rnd(-1,0.3));//-3,0 solo in alto
 		lin.angle = rnd(0,360);
-        lin.angularVel = rnd(-5,5); //velocita di rotazione
-        lin.life = 50 + rnd(10,100);
+        lin.angularVel = rnd(-6,6); //velocita di rotazione
+        lin.life = 150 + rnd(10,100);
 		lin.color = textureEnabled && rnd(0,1) > 0.5 ? '#f80' : COLORS[currentColor]
 		shipPieces.push( lin );
 	}
 	
     //palle di fumo
     shipSmoke = [];
-    for(let i = 0; i < 50; i++) {
+    for(let i = 0; i < 100; i++) {
         shipSmoke.push({
             pos: new Point(ship.position.x, ship.position.y + ship.size.height / 2),
-            vel: new Point(rnd(-1,1), rnd(-1,0.3)),//-1,0 solo in alto 
+            vel: new Point(rnd(-3,3), rnd(-2,1)),//-1,0 solo in alto 
             alpha: Math.random() * 3,
-            size: rnd(0,4)
+            size: rnd(0,5)
         });
     }
 }
