@@ -34,1106 +34,1165 @@
 	<canvas id="gameCanvas"></canvas>
 
 <script>
-//canvas setup
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
+	//canvas setup
+	const canvas = document.getElementById('gameCanvas');
+	const ctx = canvas.getContext('2d');
 
-let vpW = window.innerWidth;
-let vpH = window.innerHeight;
-canvas.width = vpW;
-canvas.height = vpH;
+	let vpW = window.innerWidth;
+	let vpH = window.innerHeight;
+	canvas.width = vpW;
+	canvas.height = vpH;
 
-//utils
-function degToRad(deg){ return deg * Math.PI / 180; }
-function rnd(min,max){ return Math.random()*(max-min)+min; }
-function distance(x1,y1,x2,y2){ return Math.hypot(x2-x1,y2-y1); }
+	//utils
+	function degToRad(deg) { return deg * Math.PI / 180; }
+	function rnd(min, max) { return Math.random() * (max - min) + min; }
+	function distance(x1, y1, x2, y2) { return Math.hypot(x2 - x1, y2 - y1); }
 
-//classes
-class Point 		{ constructor(x,y){ this.x=x; this.y=y; } }
-class LandingLine 	{ constructor(a,b,m){ this.pointA=a; this.pointB=b; this.multiply=m; } }
-class Star 			{ constructor(pos,alpha){ this.pos=pos; this.alpha=alpha; } }
-
-//game status
-let frames = 0;
-let startTime = Date.now();
-let shipSize = 50;//dimensioni navetta
-let ship = { 	position: new Point(vpW/2,shipSize), 
-				size: { width:shipSize, height:shipSize}, 
-				speed: new Point(0,0), 
-				angle: 0, 
-				fuel: 999,//quanto carburante a bordo
-				alive: true, 
-				landed: false,
-				landedAt: 0,//timestamp atterraggio
-				canTakeOff: false//pronto al decollo
-				};
-
-let mainTerrain={ vertices:[], landingPlaces:[] };//terreno
-let myCam={ position:new Point(0,0), scale:1 };//telecamera (aargh!)
-let keyList = [];
-let gravity = 0.0075;
-let shipPieces = [];//kaboom
-let shipSmoke = [];//nuvoletta
-let tdelta = 15;//quanto accidentato il terreno
-let tpieces = 200;//in quanti segmenti suddividere lo schermo in orizzontale
-let minLandingSpeed = 0.5;
-let minLandingAngle = 5;
-let landingSize = 1.5;//quanto larghe le piazzole di sosta
-let maxSpeed = 5;//velocita max
-let godMode = false;
-
-let starsList = [];//stelle
-
-//audio
-const engineSound = new Audio('engine.mp3'); engineSound.loop = true; engineSound.preload = 'auto';
-const explosionSound = new Audio('explosion.mp3'); explosionSound.loop = false; explosionSound.preload = 'auto';
-const landedSound = new Audio('landed.mp3'); landedSound.loop = false; landedSound.preload = 'auto';
-
-//real ship
-const shipImg = new Image(); shipImg.src = 'llander.png';
-let shipImgReady = false;
-shipImg.onload = () => {
-    shipImgReady = true;
-};
-//real earth
-const earthImg = new Image(); earthImg.src = 'earth.png';
-let earthImgReady = false;
-earthImg.onload = () => {
-    earthImgReady = true;
-};
-//mountains parallax
-const mountainsImg = new Image(); mountainsImg.src = 'mountains.png';
-let mountainsImgReady = false;
-mountainsImg.onload = () => {
-    mountainsImgReady = true;
-};
-
-let currentColor = 0;//color change
-let COLORS = [
-	'#fff',//bianco
-	'#0f0',//verde
-	'#f80'//arancione
-];
-let COLORS_ALPHA = [
-	'rgba(255,255,255,xxx)',//bianco
-	'rgba(0,255,0,xxx)',//verde
-	'rgba(255,128,0,xxx)'//arancio
-];
-let textureEnabled = 0;//texture switch
-let rockTexture = null;
-let scanLinesEnabled = true;//scanlines switch
-let paused = false;//pause switch
-
-
-//preso in prestito da ASTEROIDS
-function generateRockTexture() {
-    const c = document.createElement('canvas');
-    c.width = 100;
-    c.height = 100;
-    const ctx = c.getContext('2d');
-    const colors = [ '#777', '#555', '#333' ];
-  
-    //disegna puntini random
-    for (let i = 0; i < 1000; i++) {
-        const x = rnd(0, 100);
-        const y = rnd(0, 100);
-        ctx.fillStyle = colors[Math.floor(rnd(0, colors.length))];
-        ctx.fillRect(x, y, 1, 1);
-    }
-    return ctx.createPattern(c, 'repeat');
-}
-
-//terreno
-function createTerrain() {
-    mainTerrain.vertices = [];
-    mainTerrain.landingPlaces = [];
-
-    const stepX = vpW / tpieces;
-    const baseY = vpH * 0.8;
-    let x = 0;
-    let y = baseY;
-
-    const landingCount = Math.floor(rnd(4, 6));
-    const landingWidth = ship.size.width * landingSize;
-    const totalSteps = Math.floor(vpW / stepX);
-    const landingInterval = Math.floor(totalSteps / landingCount);
-    let nextLandingStep = landingInterval;
-
-    while (x <= vpW) {
-        //controllo landing line
-        if (Math.floor(x / stepX) === nextLandingStep) {
-            //crea landing line piatta
-            const ll = new LandingLine(
-                new Point(x, y),
-                new Point(x + landingWidth, y),
-                2
-            );
-            mainTerrain.landingPlaces.push(ll);
-
-            //aggiungi vertice inizio e fine
-            mainTerrain.vertices.push(new Point(x, y));
-            mainTerrain.vertices.push(new Point(x + landingWidth, y));
-
-            //salta x della landing line
-            x += landingWidth;
-
-            //prepara prossima landing line
-            nextLandingStep += landingInterval;
-        } else {
-            //terreno ondulato normale
-            //y += rnd(-tdelta, tdelta);
-			y = y * 0.25 + (y + rnd(-tdelta, tdelta)) * 0.75;
-            mainTerrain.vertices.push(new Point(x, y));
-            x += stepX;
-        }
-    }
-
-    //chiudi a destra
-    mainTerrain.vertices.push(new Point(vpW, baseY));
-}
-
-
-function updateTerrain() {
-    const buffer = vpW; //margine extra prima di generare terreno
-    const stepX = vpW / tpieces;
-
-    //estende a dx
-    while(ship.position.x + buffer > mainTerrain.vertices[mainTerrain.vertices.length-1].x){
-        let lastVertex = mainTerrain.vertices[mainTerrain.vertices.length-1];
-        let x = lastVertex.x + stepX;
-        //let y = lastVertex.y + rnd(-tdelta, tdelta);
-		let y = lastVertex.y * 0.25 + (lastVertex.y + rnd(-tdelta, tdelta)) * 0.75;
-
-        //landing line casuale
-        if(Math.random() < 0.03){
-            const landingWidth = ship.size.width * landingSize;
-            const ll = new LandingLine(new Point(x, y), new Point(x + landingWidth, y), 2);
-            mainTerrain.landingPlaces.push(ll);
-
-            //aggiungi vertici della landing line
-            mainTerrain.vertices.push(new Point(x, y));
-            mainTerrain.vertices.push(new Point(x + landingWidth, y));
-
-            //salta x per evitare vertice subito dopo
-            x += landingWidth;
-        } else {
-            //vertice normale
-            mainTerrain.vertices.push(new Point(x, y));
-        }
-    }
-
-    //estende a sx
-	while(ship.position.x - buffer < mainTerrain.vertices[0].x){
-		let firstVertex = mainTerrain.vertices[0];
-		let x = firstVertex.x - stepX;
-		//let y = firstVertex.y + rnd(-tdelta, tdelta);
-		let y = firstVertex.y * 0.25 + (firstVertex.y + rnd(-tdelta, tdelta)) * 0.75;
-
-		if(Math.random() < 0.03){
-			const landingWidth = ship.size.width * landingSize;
-			const ll = new LandingLine(new Point(x - landingWidth, y), new Point(x, y), 2);
-			mainTerrain.landingPlaces.push(ll);
-
-			//aggiungi vertici in ordine decrescente per unshift
-			mainTerrain.vertices.unshift(new Point(x, y));
-			mainTerrain.vertices.unshift(new Point(x - landingWidth, y));
-		} else {
-			mainTerrain.vertices.unshift(new Point(x, y));
+	//classes
+	class Point {
+		constructor(x, y) {
+			this.x = x;
+			this.y = y;
+		}
+	}
+	class LandingLine {
+		constructor(a, b, m) {
+			this.pointA = a;
+			this.pointB = b;
+			this.multiply = m;
+		}
+	}
+	class Star {
+		constructor(pos, alpha) {
+			this.pos = pos;
+			this.alpha = alpha;
 		}
 	}
 
+	//game status
+	let frames = 0;
+	let startTime = Date.now();
+	let shipSize = 50; //dimensioni navetta
+	let ship = {
+		position: new Point(vpW / 2, shipSize),
+		size: {
+			width: shipSize,
+			height: shipSize
+		},
+		speed: new Point(0, 0),
+		angle: 0,
+		fuel: 999, //quanto carburante a bordo
+		alive: true, //vivo o esploso
+		landed: false, //se gia atterrato
+		landedAt: 0, //timestamp atterraggio
+		canTakeOff: false //pronto al decollo
+	};
+	//let bgTerrain = { vertices:[], landingPlaces:[] };//background
+	let mainTerrain = { vertices: [], landingPlaces: [] }; //terreno
+	let myCam = { position: new Point(0, 0), scale: 1 }; //telecamera (aargh!)
+	let keyList = [];
+	let gravity = 0.0075;
+	let shipPieces = []; //kaboom
+	let shipSmoke = []; //nuvoletta
+	let tdelta = 15; //quanto accidentato il terreno
+	let tpieces = 200; //in quanti segmenti suddividere lo schermo in orizzontale
+	let minLandingSpeed = 0.5;
+	let minLandingAngle = 5;
+	let landingSize = 1.5; //quanto larghe le piazzole di sosta
+	let maxSpeed = 5; //velocita max
+	let godMode = false;
+	let starsList = []; //stelle
 
-    //toglie vertici lontani
-    while(mainTerrain.vertices.length > tpieces && mainTerrain.vertices[0].x < ship.position.x - buffer*2){
-        mainTerrain.vertices.shift();
-    }
-    while(mainTerrain.vertices.length > tpieces && mainTerrain.vertices[mainTerrain.vertices.length-1].x > ship.position.x + buffer*2){
-        mainTerrain.vertices.pop();
-    }
-}
+	//audio
+	const engineSound = new Audio('engine.mp3'); engineSound.loop = true; engineSound.preload = 'auto';
+	const explosionSound = new Audio('explosion.mp3'); explosionSound.loop = false; explosionSound.preload = 'auto';
+	const landedSound = new Audio('landed.mp3'); landedSound.loop = false; landedSound.preload = 'auto';
+
+	//real ship
+	const shipImg = new Image();
+	shipImg.src = 'llander.png';
+	let shipImgReady = false;
+	shipImg.onload = () => {
+		shipImgReady = true;
+	};
+	//real earth
+	const earthImg = new Image();
+	earthImg.src = 'earth.png';
+	let earthImgReady = false;
+	earthImg.onload = () => {
+		earthImgReady = true;
+	};
+	//mountains parallax
+	const mountainsImg = new Image();
+	mountainsImg.src = 'mountains.png';
+	let mountainsImgReady = false;
+	mountainsImg.onload = () => {
+		mountainsImgReady = true;
+	};
+	//terrain texture
+	const terrainImg = new Image();
+	terrainImg.src = 'terrain.jpg';
+	let terrainImgReady = false;
+	let terrainPattern = null;
+	terrainImg.onload = () => {
+		terrainImgReady = true;
+		terrainPattern = ctx.createPattern(terrainImg, 'repeat');
+	};
+
+	let currentColor = 0; //color change
+	let COLORS = [
+		'#fff', //bianco
+		'#0f0', //verde
+		'#f80' //arancione
+	];
+	let COLORS_ALPHA = [
+		'rgba(255,255,255,xxx)', //bianco
+		'rgba(0,255,0,xxx)', //verde
+		'rgba(255,128,0,xxx)' //arancio
+	];
+	let textureEnabled = 0; //texture switch
+	let rockTexture = null;
+	let scanLinesEnabled = true; //scanlines switch
+	let paused = false; //pause switch
 
 
-//stelline
-function createStars(){
-    starsList=[];
-    for(let i=0;i<150;i++){
-        starsList.push(new Star(new Point(rnd(vpW*0.05,vpW*0.95), rnd(vpH*0.05,vpH*0.85)), Math.floor(rnd(50,255))));
-    }
-}
+	//preso in prestito da ASTEROIDS
+	function generateRockTexture() {
+		const c = document.createElement('canvas');
+		c.width = 100;
+		c.height = 100;
+		const ctx = c.getContext('2d');
+		const colors = ['#777', '#555', '#333'];
 
-//controlli input
-document.addEventListener('keydown', e=>{
-	console.log(e.key);
-    if(!keyList.includes(e.key)) keyList.push(e.key);
-    if(e.key==='r' || e.key==='R') { resetGame(); }
-	if(e.key==='c' || e.key==='C') { currentColor = (currentColor+1)%COLORS.length; }
-	if(e.key==='t' || e.key==='T') { textureEnabled = (textureEnabled + 1) % 3; }
-	if(e.key==='g' || e.key==='G') { godMode = !godMode; }
-	if(e.key==='x' || e.key==='X') { scanLinesEnabled = !scanLinesEnabled; 
-		if (scanLinesEnabled) document.getElementById('scanlines-overlay').style.display = 'block';
-		else document.getElementById('scanlines-overlay').style.display = 'none';
+		//disegna puntini random
+		for (let i = 0; i < 1000; i++) {
+			const x = rnd(0, 100);
+			const y = rnd(0, 100);
+			ctx.fillStyle = colors[Math.floor(rnd(0, colors.length))];
+			ctx.fillRect(x, y, 1, 1);
+		}
+
+		//aggiungi qualche cratere (fill e/o stroke)
+		for (let i = 0; i < 100; i++) {
+			const x = rnd(0, 100);
+			const y = rnd(0, 100);
+			const r = rnd(1, 3);
+			ctx.fillStyle = colors[Math.floor(rnd(0, colors.length))];
+			ctx.strokeStyle = colors[Math.floor(rnd(0, colors.length))];
+			ctx.beginPath();
+			ctx.arc(x, y, r, 0, Math.PI * 2);
+			ctx.closePath();
+			if (i % 4 === 0) ctx.stroke();
+			else ctx.fill();
+		}
+
+		return ctx.createPattern(c, 'repeat');
 	}
-	if(e.key==='p' || e.key==='P') { paused = !paused;}
-	
-    if(e.key==='ArrowUp' && ship.fuel > 0 && engineSound.paused && !ship.landed && ship.alive){ engineSound.currentTime=0; engineSound.play(); }
-});
 
-document.addEventListener('keyup', e=>{
-    let idx = keyList.indexOf(e.key); if(idx>=0) keyList.splice(idx,1);
-    if(e.key==='ArrowUp'){ engineSound.pause(); }
-});
+	//update fa creazione al volo
+	function updateTerrain(mainTerrain, generateLandingLines) {
+		//init rapido
+		let baseY = vpH * (generateLandingLines ? 0.8 : 0.6);//altezza del terreno di partenza
+		if (mainTerrain.vertices.length === 0) {
+			mainTerrain.vertices.push(new Point(ship.position.x - vpW, baseY) );//aggiungi un vertice a sx
+		}
 
-//resize
-window.addEventListener('resize',()=>{
-    vpW=window.innerWidth;
-	vpH=window.innerHeight;
-    canvas.width=vpW;
-	canvas.height=vpH;
-});
+		const buffer = vpW; //margine extra prima di generare terreno
+		const stepX = vpW / tpieces;//distanza tra vertici (schermo / 200)
 
+		//estende a dx
+		//finche la nave si avvicina al bordo destro del terreno -> genera vertici!
+		while (ship.position.x + buffer > mainTerrain.vertices[mainTerrain.vertices.length - 1].x) {
+			let lastVertex = mainTerrain.vertices[mainTerrain.vertices.length - 1];
+			let x = lastVertex.x + stepX;
+			let y = lastVertex.y + rnd(-tdelta, tdelta) * 0.75;
+			if (y > vpH) y -= tdelta;
 
+			//landing line casuale se abilitata
+			if (Math.random() < 0.03 && generateLandingLines) {
+				const landingWidth = ship.size.width * landingSize;
+				const ll = new LandingLine(new Point(x, y), new Point(x + landingWidth, y), 2);
+				mainTerrain.landingPlaces.push(ll);
 
-//reset
-function resetGame(){
-    ship.fuel = 999; 
-	startTime = Date.now();
-    ship.position = new Point(vpW/2,shipSize);
-    ship.speed = new Point(0,0);
-    ship.angle = 0; 
-	ship.alive = true;
-    ship.landed = false; 
-	ship.canTakeOff = false;
-	ship.landedAt = 0;
-	shipPieces = [];//kaboom
-	shipSmoke = [];//nuvoletta
-	myCam={ position: new Point(0,0), scale: 1 };
-    createTerrain();
-    createStars();
-	rockTexture = generateRockTexture();
-}
+				//aggiungi vertici della landing line
+				mainTerrain.vertices.push(new Point(x, y));
+				mainTerrain.vertices.push(new Point(x + landingWidth, y));
 
-//telecamera
-function updateCamera() {
-	//zoom solo vicino al terreno
-    let minDist = Infinity;
-    const shipCenterX = ship.position.x;
-    const shipCenterY = ship.position.y;
+				//salta x per evitare vertice subito dopo
+				x += landingWidth;
+			} else {
+				//vertice normale
+				mainTerrain.vertices.push(new Point(x, y));
+			}
+		}
 
-    for(const v of mainTerrain.vertices){
-        const d = distance(shipCenterX, shipCenterY, v.x, v.y);
-        if(d < minDist) minDist = d;
-    }
-	
-	const zoomThreshold = vpH * 0.25;
-	
-	if(minDist < zoomThreshold){
-		myCam.scale = 2 + (zoomThreshold - minDist) / zoomThreshold; //zoom dinamico
-    } else {
-        myCam.scale = 1;
-		myCam.position.y = 0;
-    }
-	
-	//scala bloccata tra 1..2.5
-	myCam.scale = Math.min(2.5, Math.max(1, myCam.scale));
+		//estende a sx
+		//finche la nave si avvicina al bordo sinistro del terreno -> genera vertici!
+		while (ship.position.x - buffer < mainTerrain.vertices[0].x) {
+			let firstVertex = mainTerrain.vertices[0];
+			let x = firstVertex.x - stepX;
+			let y = firstVertex.y + rnd(-tdelta, tdelta) * 0.75;
+			if (y > vpH) y -= tdelta;
+			
+			//landing line casuale se abilitata
+			if (Math.random() < 0.03 && generateLandingLines) {
+				const landingWidth = ship.size.width * landingSize;
+				const ll = new LandingLine(new Point(x - landingWidth, y), new Point(x, y), 2);
+				mainTerrain.landingPlaces.push(ll);
 
-    //la camera segue sempre la navicella
-	let targetX = (shipCenterX - vpW/2 / myCam.scale);
-	let targetY = shipCenterY - vpH/2 / myCam.scale;
-	
-    myCam.position.x = targetX;
-	
-	//ma prima di 5 sec non devi zoommare!
-	if (Date.now() - startTime > 4000 && minDist < zoomThreshold)
-		myCam.position.y = targetY;
-}
+				//aggiungi vertici in ordine decrescente per unshift
+				mainTerrain.vertices.unshift(new Point(x, y));
+				mainTerrain.vertices.unshift(new Point(x - landingWidth, y));
+			} else {
+				mainTerrain.vertices.unshift(new Point(x, y));
+			}
+		}
 
+		//toglie vertici lontani a dx
+		while (mainTerrain.vertices.length > tpieces && mainTerrain.vertices[0].x < ship.position.x - buffer * 2) {
+			mainTerrain.vertices.shift();
+		}
+		//toglie vertici lontani a sx
+		while (mainTerrain.vertices.length > tpieces && mainTerrain.vertices[mainTerrain.vertices.length - 1].x > ship.position.x + buffer * 2) {
+			mainTerrain.vertices.pop();
+		}
+	}
 
+	//stelline
+	function createStars() {
+		starsList = [];
+		for (let i = 0; i < 150; i++) {
+			starsList.push(new Star(new Point(rnd(vpW * 0.05, vpW * 0.95), rnd(vpH * 0.05, vpH * 0.85)), Math.floor(rnd(50, 255))));
+		}
+	}
 
-//movimento navetta
-function moveShip(){
-    if(!ship.alive) return;
-	//if(ship.landed) return;//voglio poter ripartire?
-	if (ship.landed) {
-		if (ship.canTakeOff && keyList.includes('ArrowUp') && ship.fuel > 0) {
-			ship.landed = false;
-			ship.canTakeOff = false;
-			ship.position.y -= 1;//altrimenti collisione == nuovo atterraggio
-			landedSound.pause();
+	//controlli input
+	document.addEventListener('keydown', e => {
+		//console.log(e.key);
+		if (!keyList.includes(e.key)) keyList.push(e.key);
+		if (e.key === 'r' || e.key === 'R') { resetGame(); }
+		if (e.key === 'c' || e.key === 'C') { currentColor = (currentColor + 1) % COLORS.length; }
+		if (e.key === 't' || e.key === 'T') { textureEnabled = (textureEnabled + 1) % 3; }
+		if (e.key === 'g' || e.key === 'G') { godMode = !godMode; }
+		if (e.key === 'x' || e.key === 'X') { 
+			scanLinesEnabled = !scanLinesEnabled;
+			if (scanLinesEnabled) document.getElementById('scanlines-overlay').style.display = 'block';
+			else document.getElementById('scanlines-overlay').style.display = 'none';
+		}
+		if (e.key === 'p' || e.key === 'P') { paused = !paused; }
+		if (e.key === 'ArrowUp' && ship.fuel > 0 && engineSound.paused && !ship.landed && ship.alive) {
 			engineSound.currentTime = 0;
 			engineSound.play();
+		}
+	});
+
+	document.addEventListener('keyup', e => {
+		let idx = keyList.indexOf(e.key);
+		if (idx >= 0) keyList.splice(idx, 1);
+		if (e.key === 'ArrowUp') { engineSound.pause(); }
+	});
+
+	//resize
+	window.addEventListener('resize', () => {
+		vpW = window.innerWidth;
+		vpH = window.innerHeight;
+		canvas.width = vpW;
+		canvas.height = vpH;
+	});
+
+	//reset
+	function resetGame() {
+		ship.fuel = 999;
+		startTime = Date.now();
+		ship.position = new Point(vpW / 2, shipSize);
+		ship.speed = new Point(0, 0);
+		ship.angle = 0;
+		ship.alive = true;
+		ship.landed = false;
+		ship.canTakeOff = false;
+		ship.landedAt = 0;
+		shipPieces = []; //kaboom
+		shipSmoke = []; //nuvoletta
+		myCam = { position: new Point(0, 0), scale: 1 };
+		mainTerrain = { vertices: [], landingPlaces: [] }; //terreno vuoto
+		//bgTerrain = { vertices:[], landingPlaces:[] }; //terreno vuoto
+		createStars();
+		rockTexture = generateRockTexture();
+	}
+
+	//telecamera
+	function updateCamera() {
+		//zoom solo vicino al terreno
+		let minDist = Infinity;
+		const shipCenterX = ship.position.x;
+		const shipCenterY = ship.position.y;
+
+		for (const v of mainTerrain.vertices) {
+			const d = distance(shipCenterX, shipCenterY, v.x, v.y);
+			if (d < minDist) minDist = d;
+		}
+
+		const zoomThreshold = vpH * 0.25;
+
+		if (minDist < zoomThreshold) {
+			myCam.scale = 2 + (zoomThreshold - minDist) / zoomThreshold; //zoom dinamico
 		} else {
+			myCam.scale = 1;
+			myCam.position.y = 0;
+		}
+
+		//scala bloccata tra 1..2.5
+		myCam.scale = Math.min(2.5, Math.max(1, myCam.scale));
+
+		//la camera segue sempre la navicella
+		let targetX = (shipCenterX - vpW / 2 / myCam.scale);
+		let targetY = shipCenterY - vpH / 2 / myCam.scale;
+
+		myCam.position.x = targetX;
+
+		//ma prima di 5 sec non devi zoommare!
+		if (Date.now() - startTime > 3000 && minDist < zoomThreshold)
+			myCam.position.y = targetY;
+	}
+
+	//movimento navetta
+	function moveShip() {
+		if (!ship.alive) return;
+		//if(ship.landed) return;//voglio poter ripartire?
+		if (ship.landed) {
+			if (ship.canTakeOff && keyList.includes('ArrowUp') && ship.fuel > 0) {
+				ship.landed = false;
+				ship.canTakeOff = false;
+				ship.position.y -= 1; //altrimenti collisione == nuovo atterraggio
+				landedSound.pause();
+				engineSound.currentTime = 0;
+				engineSound.play();
+			} else {
+				return;
+			}
+		}
+
+		for (const key of keyList) {
+			if (key === 'ArrowRight') {
+				ship.angle += 0.5;
+				if (ship.angle === 360)
+					ship.angle = 0;
+			}
+			if (key === 'ArrowLeft') {
+				ship.angle -= 0.5;
+				if (ship.angle === -360)
+					ship.angle = 0;
+			}
+			if (key === 'ArrowUp' && ship.fuel > 0) {
+				if (!godMode)
+					ship.fuel = Math.max(0, ship.fuel - 1);
+				ship.speed.x += Math.sin(degToRad(ship.angle)) * 0.0175;
+				ship.speed.y -= Math.cos(degToRad(ship.angle)) * 0.0175;
+			}
+		}
+		ship.speed.y += gravity;
+		ship.speed.x = Math.min(Math.max(ship.speed.x, -maxSpeed), maxSpeed);
+		ship.speed.y = Math.min(Math.max(ship.speed.y, -maxSpeed), maxSpeed);
+		ship.position.x += ship.speed.x;
+		ship.position.y += ship.speed.y;
+		//consumo fuel a prescindere dalla manetta, spegne i motori quando atterra
+		if (ship.fuel > 0 && !ship.landed && !godMode) {
+			ship.fuel = Math.max(0, ship.fuel - 0.002);
+		} else if (ship.fuel <= 0) {
+			engineSound.pause();
+		}
+	}
+
+	//collisioni (qui iniziano i dolori)
+	function getShipOBB() {
+		const hw = ship.size.width / 2;
+		const hh = ship.size.height / 2;
+		const a = degToRad(ship.angle);
+		const cos = Math.cos(a);
+		const sin = Math.sin(a);
+
+		const cx = ship.position.x;
+		const cy = ship.position.y;
+
+		return [{
+				x: cx + (-hw) * cos - (-hh) * sin,
+				y: cy + (-hw) * sin + (-hh) * cos
+			}, //TL
+			{
+				x: cx + (hw) * cos - (-hh) * sin,
+				y: cy + (hw) * sin + (-hh) * cos
+			}, //TR
+			{
+				x: cx + (hw) * cos - (hh) * sin,
+				y: cy + (hw) * sin + (hh) * cos
+			}, //BR
+			{
+				x: cx + (-hw) * cos - (hh) * sin,
+				y: cy + (-hw) * sin + (hh) * cos
+			} //BL
+		];
+	}
+
+	function segmentsIntersect(a, b, c, d) {
+		function ccw(p1, p2, p3) {
+			return (p3.y - p1.y) * (p2.x - p1.x) > (p2.y - p1.y) * (p3.x - p1.x);
+		}
+		return (
+			ccw(a, c, d) !== ccw(b, c, d) &&
+			ccw(a, b, c) !== ccw(a, b, d));
+	}
+
+	function checkCollision() {
+		if (!ship.alive || ship.landed)
 			return;
-		}
-	}	
-	
-    for(const key of keyList){
-        if(key==='ArrowRight') { ship.angle += 0.5; if(ship.angle === 360) ship.angle = 0; }
-        if(key==='ArrowLeft') { ship.angle -= 0.5; if(ship.angle === -360) ship.angle = 0; }
-        if(key==='ArrowUp' && ship.fuel > 0){
-            if (!godMode) ship.fuel = Math.max(0, ship.fuel - 1);
-            ship.speed.x += Math.sin(degToRad(ship.angle))*0.0175;
-            ship.speed.y -= Math.cos(degToRad(ship.angle))*0.0175;
-        } 
-    }
-    ship.speed.y += gravity;
-    ship.speed.x = Math.min(Math.max(ship.speed.x,-maxSpeed),maxSpeed);
-    ship.speed.y = Math.min(Math.max(ship.speed.y,-maxSpeed),maxSpeed);
-    ship.position.x += ship.speed.x;
-    ship.position.y += ship.speed.y;
-	//consumo fuel a prescindere dalla manetta, spegne i motori quando atterra
-	if (ship.fuel > 0 && !ship.landed) {
-		if (!godMode) ship.fuel = Math.max(0, ship.fuel - 0.002);
-	} else if (ship.fuel <= 0) {
-		engineSound.pause();
-	}
-}
 
-//collisioni (qui iniziano i dolori)
-function getShipOBB() {
-    const hw = ship.size.width / 2;
-    const hh = ship.size.height / 2;
-    const a = degToRad(ship.angle);
-    const cos = Math.cos(a);
-    const sin = Math.sin(a);
-
-    const cx = ship.position.x;
-    const cy = ship.position.y;
-
-    return [
-        { x: cx + (-hw)*cos - (-hh)*sin, y: cy + (-hw)*sin + (-hh)*cos }, //TL
-        { x: cx + ( hw)*cos - (-hh)*sin, y: cy + ( hw)*sin + (-hh)*cos }, //TR
-        { x: cx + ( hw)*cos - ( hh)*sin, y: cy + ( hw)*sin + ( hh)*cos }, //BR
-        { x: cx + (-hw)*cos - ( hh)*sin, y: cy + (-hw)*sin + ( hh)*cos }  //BL
-    ];
-}
-
-function segmentsIntersect(a,b,c,d){
-    function ccw(p1,p2,p3){
-        return (p3.y-p1.y)*(p2.x-p1.x) > (p2.y-p1.y)*(p3.x-p1.x);
-    }
-    return (
-        ccw(a,c,d) !== ccw(b,c,d) &&
-        ccw(a,b,c) !== ccw(a,b,d)
-    );
-}
-
-function checkCollision() {
-    if (!ship.alive || ship.landed) return;
-	
-	//esplode se troppo in alto
-	if(ship.position.y < -1000) {
-		if (!godMode) explodeShip();
-		else { ship.speed.x = 0; ship.speed.y = 0; ship.position.y = -999; }
-	}
-
-    const box = getShipOBB();
-
-    //lati della hitbox
-    const edges = [
-        [box[0], box[1]],
-        [box[1], box[2]],
-        [box[2], box[3]],
-        [box[3], box[0]]
-    ];
-
-    //piattaforme di landing
-    for (const ll of mainTerrain.landingPlaces) {
-        const A = ll.pointA;
-        const B = ll.pointB;
-		//centro della landing line 
-		const landingCenterX = (A.x + B.x) / 2;
-		const landingCenterY = (A.y + B.y) / 2;
-
-		const nearCenterX = Math.abs(landingCenterX - ship.position.x) < (ship.size.width / 3);
-		const nearCenterY = Math.abs(landingCenterY - (ship.position.y + ship.size.height / 2)) < 4;
-		
-        for (const e of edges) {
-            if (segmentsIntersect(e[0], e[1], A, B)) {
-                if (nearCenterX && nearCenterY && ship.speed.y < minLandingSpeed && ship.speed.x < minLandingSpeed && Math.abs(ship.angle % 360) < minLandingAngle) {
-					ship.landed = true;
-                    ship.speed.x = 0;
-                    ship.speed.y = 0;
-                    ship.angle = 0;
-					ship.landedAt = Date.now();
-					setTimeout(function() { ship.canTakeOff = true; }, 5000);//dopo 5 secondi puoi decollare di nuovo!
-					landedSound.currentTime = 0;
-					landedSound.play();					
-                    return;
-                } else {
-                    if (!godMode) explodeShip();
-					else { ship.speed.x = 0; ship.speed.y *= -1; ship.position.y = getTerrainYAtX(ship.position.x) - ship.size.height; }
-                    return;
-                }
-            }
-        }
-    }
-
-    //terreno accidentato normale
-    for (let i = 1; i < mainTerrain.vertices.length; i++) {
-        const A = mainTerrain.vertices[i-1];
-        const B = mainTerrain.vertices[i];
-
-        for (const e of edges) {
-            if (segmentsIntersect(e[0], e[1], A, B)) {
-                if (!godMode) explodeShip();
-				else { ship.speed.x = 0; ship.speed.y *= -1; ship.position.y = getTerrainYAtX(ship.position.x) - ship.size.height; }
-                return;
-            }
-        }
-    }
-}
-
-
-
-//kaboom
-function explodeShip() {
-    ship.alive = false;
-    explosionSound.play();
-
-    const w = ship.size.width;
-    const h = ship.size.height;
-
-	//pezzi di navetta
-	shipPieces = [];
-	for(let i = -5; i <= 5; i++) {
-		let lin = {};
-		lin.start = {x: -w * i / 30, y: -h * i / 30};
-		lin.end = {x: w * i / 30, y: h * i / 30};
-		lin.pos = new Point(ship.position.x, ship.position.y + ship.size.height / 3);
-		lin.vel = new Point(rnd(-2,2), rnd(-1,0.3));//-3,0 solo in alto
-		lin.angle = rnd(0,360);
-        lin.angularVel = rnd(-6,6); //velocita di rotazione
-        lin.life = 150 + rnd(10,100);
-		lin.color = textureEnabled && rnd(0,1) > 0.5 ? '#f80' : COLORS[currentColor]
-		shipPieces.push( lin );
-	}
-	
-    //palle di fumo
-    shipSmoke = [];
-    for(let i = 0; i < 100; i++) {
-        shipSmoke.push({
-            pos: new Point(ship.position.x, ship.position.y + ship.size.height / 2),
-            vel: new Point(rnd(-3,3), rnd(-2,1)),//-1,0 solo in alto 
-            alpha: Math.random() * 3,
-            size: rnd(0,5)
-        });
-    }
-}
-
-//aggiorna pezzi e palle :-)
-function updateShipPieces() {
-    for(let i = shipPieces.length-1; i>=0; i--){
-        const p = shipPieces[i];
-        p.pos.x += p.vel.x;
-        p.pos.y += p.vel.y;
-        p.vel.y += gravity*0.1; //gravita piu leggera
-        p.angle += p.angularVel;
-        p.life--;
-        if(p.life <= 0) shipPieces.splice(i,1);
-    }
-
-    //aggiornamento palle di fumo
-    for(let i = shipSmoke.length-1; i>=0; i--){
-        const s = shipSmoke[i];
-        s.pos.x += s.vel.x;
-        s.pos.y += s.vel.y;
-        s.alpha -= 0.01;
-		s.size  -= 0.01;
-        if(s.alpha <= 0 || s.size <= 0) shipSmoke.splice(i,1);
-    }
-}
-
-
-//disegno
-//stelline in cielo sbrilluccicose assai
-function drawStars() {
-    for(const s of starsList){
-        s.alpha = (s.alpha + 5) % 255;
-        ctx.fillStyle = COLORS_ALPHA[currentColor].replace('xxx',s.alpha/255);
-        ctx.beginPath();
-        //disegno fisso sullo schermo
-        const x = s.pos.x; 
-        const y = s.pos.y;
-        ctx.arc(x, y, 1, 0, Math.PI*2);
-        ctx.fill();
-    }
-}
-
-//madreterra real
-function drawRealEarth(x, y, r) {
-	if(!textureEnabled) return;
-	if(myCam.scale != 1) return;
-	
-	ctx.drawImage(earthImg, x - r, y - r, r*2, r*2);
-	
-	//notte
-	drawNight(x, y, r);
-}
-
-//atmosfera
-function drawAtmos(x, y, r) {
-	ctx.beginPath();
-    ctx.arc(x, y, r * 1.5, 0, Math.PI * 2);
-    const atmos = ctx.createRadialGradient(x, y, 0, x, y, r * 1.5);
-	atmos.addColorStop(0, 'rgba(255,255,255,0.5)');
-    atmos.addColorStop(1, 'rgba(255,255,255,0)');
-	ctx.fillStyle = atmos;
-	ctx.closePath();
-	ctx.fill();
-}
-
-//notte
-function drawNight(x, y, r) {
-	const night = ctx.createRadialGradient(x - r, y - r, r, x - r, y - r, r*2);
-    night.addColorStop(0, 'rgba(0,0,0,0)');
-	night.addColorStop(1, 'rgba(0,0,0,1)');
-	ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fillStyle = night;
-    ctx.fill();
-}
-
-//madreterra
-function drawEarth() {
-	if(!textureEnabled) return;
-	if(myCam.scale != 1) return;
-	
-	const r = 40;
-    const x = vpW - 100;
-    const y = 60;
-
-	//atmosfera
-	drawAtmos(x, y, r);
-	
-	if(textureEnabled === 2 && earthImgReady) return drawRealEarth(x, y, r);
-	
-    //oceano
-    const ocean = ctx.createRadialGradient(x - r/2, y - r/2, 0, x, y, r);
-	ocean.addColorStop(0, '#4bf');//blu
-	ocean.addColorStop(1, '#003');
-	
-	//terra
-	const green = ctx.createRadialGradient(x - r/2, y - r/2, 0, x, y, r);
-	green.addColorStop(0, '#2a3');//verdone
-	green.addColorStop(1, '#030');
-	
-	ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fillStyle = ocean;
-    ctx.fill();	
-	
-	ctx.fillStyle = green;
-	drawContinent(x - 12, y - 12, 15, 8, 14);//america nord 
-	drawContinent(x - 8, y + 14, 12, 6, 12);//america sud 	
-	drawContinent(x + 14, y - 18, 10, 4, 10);//europa 
-	drawContinent(x + 20, y + 4, 10, 6, 12);//africa 
-	
-	//notte
-	drawNight(x, y, r);
-}
-
-//continenti frastagliati
-function drawContinent(cx, cy, baseR, irregularity, points) {
-    ctx.beginPath();
-
-    for (let i = 0; i <= points; i++) {
-        const angle = (i / points) * Math.PI * 2;
-
-        // raggio variabile per creare frastagliatura
-		const seed = i * 928371 + cx * 12345 + cy * 54321;
-		const rand = seededRandom(seed);
-        const r = baseR + (rand - 0.5) * irregularity;
-
-        const px = cx + Math.cos(angle) * r;
-        const py = cy + Math.sin(angle) * r;
-
-        if (i === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-    }
-
-    ctx.closePath();
-    ctx.fill();
-}
-
-//grazie chatgpt
-function seededRandom(seed) {
-    // hash veloce e deterministico
-    seed = (seed ^ 0x6C8E9CF570932BD5) >>> 0;
-    seed = (seed * 0x6C8E9CF5) >>> 0;
-    return (seed >>> 8) / 0xFFFFFF;
-}
-
-
-//terreno lunare
-function drawTerrain() {
-	ctx.save();
-	
-    //porta il canvas nello spazio mondo
-    ctx.scale(myCam.scale, myCam.scale);
-    ctx.translate(-myCam.position.x, -myCam.position.y);
-
-    ctx.beginPath();
-
-    const v0 = mainTerrain.vertices[0];
-    ctx.moveTo(v0.x, v0.y);
-	
-	//massimo y del terreno
-	let maxY = 0;
-    
-	for (let i = 1; i < mainTerrain.vertices.length; i++) {
-        const v = mainTerrain.vertices[i];
-        ctx.lineTo(v.x, v.y);
-		if(maxY < v.y) maxY = v.y;
-    }
-
-    //chiudi il terreno con un bottom fisso rispetto ai vertici
-	const last = mainTerrain.vertices[mainTerrain.vertices.length - 1];
-    const bottomY = maxY + 500;//vpH + 200
-	ctx.lineTo(last.x, bottomY);
-    ctx.lineTo(v0.x, bottomY);
-    ctx.closePath();
-    
-    //pulizia da stelle che appaiono nel terreno
-    ctx.fillStyle = 'black';
-    ctx.fill();
-
-    if (textureEnabled) {
-        //gradiente IN WORLD SPACE
-        const grad = ctx.createLinearGradient(
-            0, myCam.position.y,
-            0,myCam.position.y + vpH / myCam.scale
-        );
-
-        grad.addColorStop(0, COLORS_ALPHA[currentColor].replace('xxx','0.2'));
-        grad.addColorStop(1, 'rgba(0,0,0,1)');
-
-        ctx.fillStyle = grad;
-        ctx.fill();
-
-        //texture rocciosa che SCORRE col terreno (ASTEROIDS non lo fa?)
-        ctx.globalCompositeOperation = 'multiply';
-        ctx.fillStyle = rockTexture;
-        ctx.fill();
-        ctx.globalCompositeOperation = 'source-over';
-    }
-
-    //contorno
-    ctx.strokeStyle = textureEnabled ? COLORS_ALPHA[currentColor].replace('xxx','0.25') : COLORS[currentColor];
-    ctx.lineWidth = 1 / myCam.scale;
-    ctx.stroke();
-
-    //landing lines
-    ctx.lineWidth = 2 / myCam.scale;
-    for (const ll of mainTerrain.landingPlaces) {
-        ctx.beginPath();
-        ctx.moveTo(ll.pointA.x, ll.pointA.y);
-        ctx.lineTo(ll.pointB.x, ll.pointB.y);
-        ctx.stroke();
-    }
-
-    ctx.restore();
-}
-
-
-//montagne lunari
-function drawRealMountains() {
-	if(!textureEnabled || !mountainsImgReady) return;
-	
-	let offsetX = (-myCam.position.x * 0.3) % mountainsImg.width;//veloce 1/3
-	if (offsetX < 0) offsetX += mountainsImg.width;
-	let offsetY = -myCam.position.y * 0.3;//dal basso, veloce 1/3
-	
-	for (let x = -2; x <= 2; x++) {
-		ctx.drawImage(
-			mountainsImg,
-			offsetX + x * mountainsImg.width,
-			offsetY + canvas.height * 0.2,//(myCam.position.y * 0.3) % mountainsImg.height,//dall'alto
-			mountainsImg.width,
-			canvas.height
-		);
-	}
-}
-
-
-//altitudine
-function getTerrainYAtX(x) {
-    for (let i = 1; i < mainTerrain.vertices.length; i++) {
-        const A = mainTerrain.vertices[i - 1];
-        const B = mainTerrain.vertices[i];
-
-        if (x >= A.x && x <= B.x) {
-            const t = (x - A.x) / (B.x - A.x);
-            return A.y + t * (B.y - A.y); // interpolazione lineare
-        }
-    }
-    return null;
-}
-
-
-//real ship
-function drawRealShip() {
-	if(!ship.alive) return; //non disegnare se distrutta
-
-    const centerX = (ship.position.x - myCam.position.x) * myCam.scale;
-    const centerY = (ship.position.y - myCam.position.y) * myCam.scale;
-    const w = ship.size.width;
-    const h = ship.size.height;
-
-    ctx.save();
-	ctx.translate(centerX, centerY);
-	ctx.scale(myCam.scale, myCam.scale);
-	ctx.rotate(degToRad(ship.angle));
-
-	ctx.drawImage(shipImg, -w / 2, -h / 2, w, h);
-	
-	//FIAMMONE CLAMOROSO
-	drawClamorousFlame(w, h, 4);	
-
-	ctx.restore();
-}
-
-//ECCOLO IL FIAMMONE CLAMOROSO!
-function drawClamorousFlame(w, h, deltaY){
-	if (ship.fuel > 0 && !ship.landed) {
-		const flameStr = keyList.includes('ArrowUp') ? 0.75 : 0.1;
-		const flameLen = h * (flameStr + Math.random() * flameStr);//fiamma alta
-		const flameW  = w * 0.15;//fiamma stretta
-
-		const grad = ctx.createRadialGradient(0, h*0.15, 2,//x0, y0, r0
-											  0, h*0.25, flameLen);//x1, y1, r1
-		if(textureEnabled) {
-			grad.addColorStop(0, 'rgba(255,255,255,0.9)');
-			grad.addColorStop(0.33, 'rgba(255,200,50,0.9)');
-			grad.addColorStop(0.5, 'rgba(255,0,0,0.9)');
-			grad.addColorStop(1, 'rgba(255,0,0,0)');
-		} else {
-			grad.addColorStop(0, COLORS_ALPHA[currentColor].replace('xxx','0.9'));
-			grad.addColorStop(1, COLORS_ALPHA[currentColor].replace('xxx','0'));
+		//esplode se troppo in alto
+		if (ship.position.y < -1000) {
+			if (!godMode)
+				explodeShip();
+			else {
+				ship.speed.x = 0;
+				ship.speed.y = 0;
+				ship.position.y = -999;
+			}
 		}
 
-		//aggiunto un punto medio di fiamma largo ma random
-		let pmx = flameW * 0.75 + rnd(0, flameW * 0.5);
-		let pmy = h * 0.2 + flameLen * 0.2;
-		
-		ctx.fillStyle = grad;
-		ctx.beginPath();
-		ctx.moveTo(-flameW, h*0.2 + deltaY);
-		ctx.lineTo(-pmx, pmy);//aggiunto un punto medio imprevedibile
-		ctx.lineTo(0, h*0.2 + flameLen + deltaY);
-		ctx.lineTo(pmx, pmy  + deltaY);
-		ctx.lineTo(flameW, h*0.2 + deltaY);
-		ctx.closePath();
-		ctx.fill();
-		//bordo fiamma?
-		ctx.strokeStyle = textureEnabled ? 'rgba(128,0,0,0.2)' : COLORS_ALPHA[currentColor].replace('xxx','0.2');
-		ctx.stroke();
-		
-		//se sto a manetta
-		if(keyList.includes('ArrowUp')) {
-			//... e sto vicino al terreno
-			let terrainY = getTerrainYAtX(ship.position.x);
-			let isNearTerrain = (terrainY - ship.position.y - ship.size.height/2) < ship.size.height;
-			//... e non ho gia un polverone che levati proprio
-			if(isNearTerrain && shipSmoke.length < 50) {
-				for(let i = -1 ; i <= 1; i++) {
-					//aggiunto angolo alla posizione per spostare fumo quando nave inclinata
-					let spostamentoFumo = Math.max(ship.angle + 400, 400) - 400;//angolo negativo: -10 -> 390 -> -10, angolo positivo: 10 -> 410 -> 10
-					spostamentoFumo = Math.min(spostamentoFumo + 400, 450) - 400;//limito al max 50 pixel
-					shipSmoke.push({
-						pos: new Point(ship.position.x - i * ship.size.width / 4 - spostamentoFumo, terrainY),
-						vel: new Point(rnd(-1,1), rnd(-0.1,0)),
-						alpha: Math.random() * 2,
-						size: rnd(1,4)
-					});
+		const box = getShipOBB();
+
+		//lati della hitbox
+		const edges = [
+			[box[0], box[1]],
+			[box[1], box[2]],
+			[box[2], box[3]],
+			[box[3], box[0]]
+		];
+
+		//piattaforme di landing
+		for (const ll of mainTerrain.landingPlaces) {
+			const A = ll.pointA;
+			const B = ll.pointB;
+			//centro della landing line
+			const landingCenterX = (A.x + B.x) / 2;
+			const landingCenterY = (A.y + B.y) / 2;
+
+			const nearCenterX = Math.abs(landingCenterX - ship.position.x) < (ship.size.width / 3);
+			const nearCenterY = Math.abs(landingCenterY - (ship.position.y + ship.size.height / 2)) < 4;
+
+			for (const e of edges) {
+				if (segmentsIntersect(e[0], e[1], A, B)) {
+					if (nearCenterX && nearCenterY && ship.speed.y < minLandingSpeed && ship.speed.x < minLandingSpeed && Math.abs(ship.angle % 360) < minLandingAngle) {
+						ship.landed = true;
+						ship.speed.x = 0;
+						ship.speed.y = 0;
+						ship.angle = 0;
+						ship.landedAt = Date.now();
+						setTimeout(function () { ship.canTakeOff = true; }, 5000); //dopo 5 secondi puoi decollare di nuovo!
+						landedSound.currentTime = 0;
+						landedSound.play();
+						return;
+					} else {
+						if (!godMode)
+							explodeShip();
+						else {
+							ship.speed.x = 0;
+							ship.speed.y *= -1;
+							ship.position.y = getTerrainYAtX(ship.position.x) - ship.size.height;
+						}
+						return;
+					}
+				}
+			}
+		}
+
+		//terreno accidentato normale
+		for (let i = 1; i < mainTerrain.vertices.length; i++) {
+			const A = mainTerrain.vertices[i - 1];
+			const B = mainTerrain.vertices[i];
+
+			for (const e of edges) {
+				if (segmentsIntersect(e[0], e[1], A, B)) {
+					if (!godMode)
+						explodeShip();
+					else {
+						ship.speed.x = 0;
+						ship.speed.y *= -1;
+						ship.position.y = getTerrainYAtX(ship.position.x) - ship.size.height;
+					}
+					return;
 				}
 			}
 		}
 	}
-}
 
+	//kaboom
+	function explodeShip() {
+		ship.alive = false;
+		explosionSound.play();
 
-//navetta
-function drawShip() {
-	if(textureEnabled === 2 && shipImgReady) return drawRealShip();
-    
-	if(!ship.alive) return; //non disegnare se distrutta
+		const w = ship.size.width;
+		const h = ship.size.height;
 
-    const centerX = (ship.position.x - myCam.position.x) * myCam.scale;
-    const centerY = (ship.position.y - myCam.position.y) * myCam.scale;
-    const w = ship.size.width;
-    const h = ship.size.height;
+		//pezzi di navetta
+		shipPieces = [];
+		for (let i = -5; i <= 5; i++) {
+			let lin = {};
+			lin.start = {
+				x: -w * i / 30,
+				y: -h * i / 30
+			};
+			lin.end = {
+				x: w * i / 30,
+				y: h * i / 30
+			};
+			lin.pos = new Point(ship.position.x, ship.position.y + ship.size.height / 3);
+			lin.vel = new Point(rnd(-2, 2), rnd(-2, 0.3)); //-3,0 solo in alto
+			lin.angle = rnd(0, 360);
+			lin.angularVel = rnd(-6, 6); //velocita di rotazione
+			lin.life = 150 + rnd(10, 100);
+			lin.color = textureEnabled && rnd(0, 1) > 0.5 ? '#f80' : COLORS[currentColor];
+			shipPieces.push(lin);
+		}
 
-    ctx.save();
-	ctx.translate(centerX, centerY);
-	ctx.scale(myCam.scale, myCam.scale);
-	ctx.rotate(degToRad(ship.angle));
-
-	ctx.lineWidth = 1;
-
-	//hitbox
-	//ctx.strokeStyle = 'red';
-	//ctx.strokeRect( -ship.size.width / 2, -ship.size.height / 2, ship.size.width, ship.size.height );
-	
-	let golden = '#f80';//'#ccc';
-	
-	//ottagono (angolo parte da destra, sotto, sinistra, alto... sigh!
-	ctx.strokeStyle = textureEnabled ? '#333' : COLORS[currentColor];
-	const radius = w * 0.28;
-	const sides = 6;
-	const startAngle = 2.4;
-	const endAngle   = 7.0;
-	const step = (7.0-2.4)/sides;//(Math.PI * 2) / sides;
-		
-	ctx.beginPath();
-	for (i = 0; i <= sides; i++) {
-		let angle = startAngle +  i * step;
-		const x = Math.cos(angle) * radius;
-		const y = Math.sin(angle) * radius - h * 0.2;
-		
-		if (angle === startAngle) ctx.moveTo(x, y);
-		else ctx.lineTo(x, y);
-	}
-	ctx.closePath();
-	if(textureEnabled) {
-		const gradCenterX = -w * 0.5;
-		const gradCenterY = -h * 0.5;
-		const ballGradient = ctx.createRadialGradient(
-			gradCenterX, gradCenterY, radius * 1,//centro piccolo
-			gradCenterX, gradCenterY, radius * 2.5 //bordo
-		);
-		ballGradient.addColorStop(0.0, '#fff');
-		ballGradient.addColorStop(1.0, '#000');
-		ctx.fillStyle = ballGradient;
-		ctx.fill();
-	}	
-	ctx.stroke();
-	
-	//taglia eventuali segmenti che vanno oltre con rettangolone chiaro
-	ctx.beginPath();
-	ctx.fillStyle= textureEnabled ? '#ddd' : '#000';
-	ctx.fillRect(-w*0.22, 0, w*0.44, h*0.20);
-	
-	//parte alta rettangolo grigia scura
-	if (textureEnabled) {
-		ctx.fillStyle='#222';
-		ctx.fillRect(-w*0.22, 0, w*0.44, h*0.14);
-		
-		//rettangolo centrale chiaro
-		ctx.fillStyle='#ddd';
-		ctx.fillRect(-w*0.05,0,w*0.10,h*0.14);
-	}
-	
-    //rettangolo
-	ctx.beginPath();
-	ctx.strokeStyle = textureEnabled ? '#ddd' : COLORS[currentColor];
-	ctx.strokeRect(-w*0.22, 0, w*0.44, h*0.20);
-	ctx.beginPath();
-	ctx.moveTo(-w*0.22, h*0.14);//---- orizz sx
-	ctx.lineTo(-w*0.05, h*0.14);
-	ctx.stroke();
-	ctx.beginPath();
-	ctx.moveTo(w*0.22, h*0.14);//---- orizz dx
-	ctx.lineTo(w*0.05, h*0.14);
-	ctx.stroke();
-	
-	if(textureEnabled) {
-		//USA flag
-		drawUSFlag(-w * 0.20, h * 0.04, w * 0.14);
-	}
-	//righe verticali
-	ctx.beginPath();
-	ctx.moveTo(-w*0.05, 0);//--|---|-- a sx
-	ctx.lineTo(-w*0.05, h*0.14);
-	ctx.stroke();
-	ctx.beginPath();
-	ctx.moveTo(w*0.05, 0);//--|---|-- a dx
-	ctx.lineTo(w*0.05, h*0.14);
-	ctx.stroke();
-	
-    //zampette atterraggio
-	//sx
-	ctx.strokeStyle = textureEnabled ? golden : COLORS[currentColor];
-	ctx.beginPath();
-	ctx.moveTo(-w*0.22, 0);//attacco alto
-	ctx.lineTo(-w*0.33, h*0.09);//alto
-	ctx.lineTo(-w*0.45, h*0.47);//centro piede
-	ctx.lineTo(-w*0.39, h*0.3);//medio
-	ctx.lineTo(-w*0.23, h*0.2);//attacco interno
-	ctx.lineTo(-w*0.33, h*0.09);//alto
-	ctx.closePath();
-	ctx.stroke();
-	
-	//piede sx
-	ctx.beginPath();
-	ctx.fillStyle= textureEnabled ? golden : '#000';
-	ctx.fillRect(-w*0.5, h*0.5, w*0.10, -h*0.02);
-	ctx.strokeRect(-w*0.5, h*0.5, w*0.10, -h*0.02);
-	
-	//dx
-	ctx.strokeStyle = textureEnabled ? golden : COLORS[currentColor];
-	ctx.beginPath();
-	ctx.moveTo(w*0.22, 0);//attacco alto
-	ctx.lineTo(w*0.33, h*0.09);//alto
-	ctx.lineTo(w*0.45, h*0.47);//centro piede
-	ctx.lineTo(w*0.39, h*0.3);//medio
-	ctx.lineTo(w*0.23, h*0.2);//attacco interno
-	ctx.lineTo(w*0.33, h*0.09);//alto
-	ctx.stroke();
-	
-	//piede dx
-	ctx.beginPath();
-	ctx.fillStyle= textureEnabled ? golden : '#000';
-	ctx.fillRect(w*0.5, h*0.5, -w*0.10, -h*0.02);
-	ctx.strokeRect(w*0.5, h*0.5, -w*0.10, -h*0.02);
-	
-	
-	//FIAMMONE CLAMOROSO
-	drawClamorousFlame(w, h, 0.5);
-	
-	//aggiunta terza gamba (rocco approved!)
-	//cx
-	ctx.beginPath();
-	ctx.strokeStyle = textureEnabled ? golden : COLORS[currentColor];
-	ctx.moveTo(-w*0.08, h*0.20);
-	ctx.lineTo(0, h*0.3);
-	ctx.lineTo(0, h*0.47);
-	ctx.lineTo(0, h*0.3);
-	ctx.lineTo(w*0.08, h*0.20);
-	ctx.stroke();
-	
-	ctx.beginPath();
-	ctx.strokeStyle = textureEnabled ? golden : COLORS[currentColor];
-	ctx.moveTo(w*0.08,h*0.20);
-	ctx.lineTo(0, h*0.05);//centro
-	ctx.lineTo(-w*0.08, h*0.20);
-	ctx.lineTo(0, h*0.05);
-	ctx.lineTo(0, h*0.47);
-	ctx.stroke();
-	
-	//piede cx
-	ctx.beginPath();
-	ctx.strokeStyle = textureEnabled ? golden : COLORS[currentColor];
-	ctx.fillStyle= textureEnabled ? golden : '#000';
-	ctx.fillRect(-w*0.05,h*0.5,w*0.1,-h*0.02);
-	ctx.strokeRect(-w*0.05,h*0.5,w*0.1,-h*0.02);
-	
-    ctx.restore();
-}
-
-//god bless america!
-function drawUSFlag(x, y, fw) {
-	if(!textureEnabled) return;
-	const fh = fw * 0.5;   // rapporto 1/2
-
-	//sfondo bianco
-	ctx.fillStyle = textureEnabled ? '#fff' : COLORS[currentColor];
-	ctx.fillRect(x, y, fw, fh);
-
-	//strisce rosse
-	ctx.fillStyle = textureEnabled ? '#f00' : '#000';
-	const stripeH = fh / 5;
-	for (let i = 0; i < 5; i += 2) {
-		ctx.fillRect(x, y + i * stripeH, fw, stripeH);
+		//palle di fumo
+		//shipSmoke = [];
+		for (let i = 0; i < 100; i++) {
+			shipSmoke.push({
+				pos: new Point(ship.position.x, ship.position.y + ship.size.height / 2),
+				vel: new Point(rnd(-3, 3), rnd(-3, 0.3)), //-1,0 solo in alto
+				alpha: Math.random() * 3,
+				size: 0.1 + rnd(0, 5)
+			});
+		}
 	}
 
-	//canton blu
-	const cantonW = fw * 0.4;
-	const cantonH = stripeH * 2;
-	ctx.fillStyle = textureEnabled ? '#008' : '#000';
-	ctx.fillRect(x, y, cantonW, cantonH);
+	//aggiorna pezzi e palle :-)
+	function updateShipPieces() {
+		for (let i = shipPieces.length - 1; i >= 0; i--) {
+			const p = shipPieces[i];
+			p.pos.x += p.vel.x;
+			p.pos.y += p.vel.y;
+			p.vel.y += gravity;
+			p.angle += p.angularVel;
+			p.life--;
+			if (p.life <= 0) shipPieces.splice(i, 1);
+		}
 
-	//stelline
-	ctx.fillStyle = '#fff';
-	const starRows = 2;
-	const starCols = 2;
+		//aggiornamento palle di fumo
+		for (let i = shipSmoke.length - 1; i >= 0; i--) {
+			const s = shipSmoke[i];
+			s.pos.x += s.vel.x;
+			s.pos.y += s.vel.y;
+			s.vel.y += gravity;
+			s.alpha -= 0.01;
+			s.size -= 0.01;
+			if (s.alpha <= 0 || s.size <= 0) shipSmoke.splice(i, 1);
+		}
+	}
 
-	for (let r = 0; r < starRows; r++) {
-		for (let c = 0; c < starCols; c++) {
-			const sx = x + cantonW * (0.1 + c / starCols);
-			const sy = y + cantonH * (0.15 + r / starRows);
+	//disegno
+	//stelline in cielo sbrilluccicose assai
+	function drawStars() {
+		for (const s of starsList) {
+			s.alpha = (s.alpha + 5) % 255;
+			ctx.fillStyle = COLORS_ALPHA[currentColor].replace('xxx', s.alpha / 255);
 			ctx.beginPath();
-			ctx.fillRect(sx, sy, fw * 0.05, fw * 0.05);
+			//disegno fisso sullo schermo
+			const x = s.pos.x;
+			const y = s.pos.y;
+			ctx.arc(x, y, 1, 0, Math.PI * 2);
 			ctx.fill();
 		}
 	}
-}
 
-//pezzetti e palle
-function drawShipPieces() {
-    for(const p of shipPieces){
-		ctx.strokeStyle = p.color;
-        ctx.save();
-        ctx.translate((p.pos.x - myCam.position.x)*myCam.scale, (p.pos.y - myCam.position.y)*myCam.scale);
-        ctx.rotate(p.angle * Math.PI / 180);
-        ctx.beginPath();
-        ctx.moveTo(p.start.x * myCam.scale, p.start.y * myCam.scale);
-        ctx.lineTo(p.end.x * myCam.scale, p.end.y * myCam.scale);
-        ctx.stroke();
-        ctx.restore();
-    }
+	//madreterra real
+	function drawRealEarth(x, y, r) {
+		if (!textureEnabled)
+			return;
+		if (myCam.scale != 1)
+			return;
 
-    //palle di fumo
-    for(const s of shipSmoke){
-		ctx.strokeStyle = COLORS_ALPHA[currentColor].replace('xxx',s.alpha);
+		ctx.drawImage(earthImg, x - r, y - r, r * 2, r * 2);
+
+		//notte
+		drawNight(x, y, r);
+	}
+
+	//atmosfera
+	function drawAtmos(x, y, r) {
 		ctx.beginPath();
-        ctx.arc((s.pos.x - myCam.position.x)*myCam.scale, (s.pos.y - myCam.position.y)*myCam.scale, s.size*myCam.scale, 0, Math.PI*2);
-		if(textureEnabled) {
-			ctx.fillStyle = COLORS_ALPHA[currentColor].replace('xxx',s.alpha/2);
+		ctx.arc(x, y, r * 1.5, 0, Math.PI * 2);
+		const atmos = ctx.createRadialGradient(x - r / 10, y - r / 10, 0, x - r / 10, y - r / 10, r * 1.25);
+		atmos.addColorStop(0, 'rgba(255,255,255,0.5)');
+		atmos.addColorStop(1, 'rgba(255,255,255,0)');
+		ctx.fillStyle = atmos;
+		ctx.closePath();
+		ctx.fill();
+	}
+
+	//notte
+	function drawNight(x, y, r) {
+		const night = ctx.createRadialGradient(x - r, y - r, r, x - r, y - r, r * 2);
+		night.addColorStop(0, 'rgba(0,0,0,0)');
+		night.addColorStop(1, 'rgba(0,0,0,1)');
+		ctx.beginPath();
+		ctx.arc(x, y, r, 0, Math.PI * 2);
+		ctx.fillStyle = night;
+		ctx.fill();
+	}
+
+	//madreterra
+	function drawEarth() {
+		if (!textureEnabled)
+			return;
+		if (myCam.scale != 1)
+			return;
+
+		const r = 40;
+		const x = vpW - 100;
+		const y = 60;
+
+		//atmosfera
+		drawAtmos(x, y, r);
+
+		if (textureEnabled === 2 && earthImgReady)
+			return drawRealEarth(x, y, r);
+
+		//oceano
+		const ocean = ctx.createRadialGradient(x - r / 2, y - r / 2, 0, x, y, r);
+		ocean.addColorStop(0, '#4bf'); //blu
+		ocean.addColorStop(1, '#003');
+
+		//terra
+		const green = ctx.createRadialGradient(x - r / 2, y - r / 2, 0, x, y, r);
+		green.addColorStop(0, '#2a3'); //verdone
+		green.addColorStop(1, '#030');
+
+		ctx.beginPath();
+		ctx.arc(x, y, r, 0, Math.PI * 2);
+		ctx.fillStyle = ocean;
+		ctx.fill();
+
+		ctx.fillStyle = green;
+		drawContinent(x - 12, y - 12, 15, 8, 14); //america nord
+		drawContinent(x - 8, y + 14, 12, 6, 12); //america sud
+		drawContinent(x + 14, y - 18, 10, 4, 10); //europa
+		drawContinent(x + 20, y + 4, 10, 6, 12); //africa
+
+		//notte
+		drawNight(x, y, r);
+	}
+
+	//continenti frastagliati
+	function drawContinent(cx, cy, baseR, irregularity, points) {
+		ctx.beginPath();
+
+		for (let i = 0; i <= points; i++) {
+			const angle = (i / points) * Math.PI * 2;
+
+			// raggio variabile per creare frastagliatura
+			const seed = i * 928371 + cx * 12345 + cy * 54321;
+			const rand = seededRandom(seed);
+			const r = baseR + (rand - 0.5) * irregularity;
+
+			const px = cx + Math.cos(angle) * r;
+			const py = cy + Math.sin(angle) * r;
+
+			if (i === 0)
+				ctx.moveTo(px, py);
+			else
+				ctx.lineTo(px, py);
+		}
+
+		ctx.closePath();
+		ctx.fill();
+	}
+
+	//grazie chatgpt
+	function seededRandom(seed) {
+		// hash veloce e deterministico
+		seed = (seed ^ 0x6C8E9CF570932BD5) >>> 0;
+		seed = (seed * 0x6C8E9CF5) >>> 0;
+		return (seed >>> 8) / 0xFFFFFF;
+	}
+
+	//terreno lunare
+	function drawTerrain(mainTerrain, parallaxFactor) {
+		ctx.save();
+
+		//porta il canvas nello spazio mondo
+		ctx.scale(myCam.scale, myCam.scale);
+		ctx.translate(-myCam.position.x * parallaxFactor, -myCam.position.y);
+
+		ctx.beginPath();
+
+		const v0 = mainTerrain.vertices[0];
+		ctx.moveTo(v0.x, v0.y);
+
+		//massimo y del terreno
+		let maxY = 0;
+
+		for (let i = 1; i < mainTerrain.vertices.length; i++) {
+			const v = mainTerrain.vertices[i];
+			ctx.lineTo(v.x, v.y);
+			if (maxY < v.y)
+				maxY = v.y;
+		}
+
+		//chiudi il terreno con un bottom fisso rispetto ai vertici
+		const last = mainTerrain.vertices[mainTerrain.vertices.length - 1];
+		const bottomY = maxY + 500; //vpH + 200
+		ctx.lineTo(last.x, bottomY);
+		ctx.lineTo(v0.x, bottomY);
+		ctx.closePath();
+
+		//pulizia da stelle che appaiono nel terreno
+		ctx.fillStyle = 'black';
+		ctx.fill();
+
+		if (textureEnabled) {
+			//gradiente IN WORLD SPACE
+			const grad = ctx.createLinearGradient(
+					0, myCam.position.y,
+					0, myCam.position.y + vpH / myCam.scale);
+			grad.addColorStop(0, COLORS_ALPHA[currentColor].replace('xxx', '0.2'));
+			grad.addColorStop(1, 'rgba(0,0,0,1)');
+			ctx.fillStyle = grad;
+			ctx.fill();
+
+			if (textureEnabled === 2) {
+				//texture jpg
+				ctx.globalCompositeOperation = 'darken';
+				ctx.fillStyle = terrainPattern;
+			} else {
+				//texture rocciosa che SCORRE col terreno (ASTEROIDS non lo fa?)
+				ctx.globalCompositeOperation = 'multiply';
+				ctx.fillStyle = rockTexture;
+			}
+			ctx.fill();
+			ctx.globalCompositeOperation = 'source-over';
+		}
+
+		//contorno
+		ctx.strokeStyle = textureEnabled ? COLORS_ALPHA[currentColor].replace('xxx', '0.25') : COLORS[currentColor];
+		ctx.lineWidth = 1 / myCam.scale;
+		ctx.stroke();
+
+		//landing lines
+		ctx.lineWidth = 2 / myCam.scale;
+		for (const ll of mainTerrain.landingPlaces) {
+			ctx.beginPath();
+			ctx.moveTo(ll.pointA.x, ll.pointA.y);
+			ctx.lineTo(ll.pointB.x, ll.pointB.y);
+			ctx.stroke();
+		}
+
+		ctx.restore();
+	}
+
+	//montagne lunari
+	function drawRealMountains() {
+		if (!textureEnabled || !mountainsImgReady) return;
+
+		let offsetX = (-myCam.position.x * 0.3) % mountainsImg.width; //veloce 1/3
+		if (offsetX < 0) offsetX += mountainsImg.width;
+		let offsetY = -myCam.position.y * 0.3; //dal basso, veloce 1/3
+
+		for (let x = -2; x <= 2; x++) {
+			ctx.drawImage(
+				mountainsImg,
+				offsetX + x * mountainsImg.width,
+				offsetY + canvas.height * 0.2, //(myCam.position.y * 0.3) % mountainsImg.height,//dall'alto
+				mountainsImg.width,
+				canvas.height);
+		}
+	}
+
+	//altitudine
+	function getTerrainYAtX(x) {
+		for (let i = 1; i < mainTerrain.vertices.length; i++) {
+			const A = mainTerrain.vertices[i - 1];
+			const B = mainTerrain.vertices[i];
+
+			if (x >= A.x && x <= B.x) {
+				const t = (x - A.x) / (B.x - A.x);
+				return A.y + t * (B.y - A.y); // interpolazione lineare
+			}
+		}
+		return null;
+	}
+
+	//real ship
+	function drawRealShip() {
+		if (!ship.alive) return; //non disegnare se distrutta
+
+		const centerX = (ship.position.x - myCam.position.x) * myCam.scale;
+		const centerY = (ship.position.y - myCam.position.y) * myCam.scale;
+		const w = ship.size.width;
+		const h = ship.size.height;
+
+		ctx.save();
+		ctx.translate(centerX, centerY);
+		ctx.scale(myCam.scale, myCam.scale);
+		ctx.rotate(degToRad(ship.angle));
+
+		ctx.drawImage(shipImg, -w / 2, -h / 2, w, h);
+
+		//FIAMMONE CLAMOROSO
+		drawClamorousFlame(w, h, 4);
+
+		ctx.restore();
+	}
+
+	//ECCOLO IL FIAMMONE CLAMOROSO!
+	function drawClamorousFlame(w, h, deltaY) {
+		if (ship.fuel > 0 && !ship.landed) {
+			const flameStr = keyList.includes('ArrowUp') ? 0.75 : 0.1;
+			const flameLen = h * (flameStr + Math.random() * flameStr); //fiamma alta
+			const flameW = w * 0.15; //fiamma stretta
+
+			const grad = ctx.createRadialGradient(0, h * 0.15, 2, //x0, y0, r0
+					0, h * 0.25, flameLen); //x1, y1, r1
+			if (textureEnabled) {
+				grad.addColorStop(0, 'rgba(255,255,255,0.9)');
+				grad.addColorStop(0.4, 'rgba(255,200,50,0.9)');
+				grad.addColorStop(0.5, 'rgba(255,0,0,0.9)');
+				grad.addColorStop(1, 'rgba(255,0,0,0)');
+			} else {
+				grad.addColorStop(0, COLORS_ALPHA[currentColor].replace('xxx', '0.9'));
+				grad.addColorStop(1, COLORS_ALPHA[currentColor].replace('xxx', '0'));
+			}
+
+			//aggiunto un punto medio di fiamma largo ma random
+			let pmx = flameW * 0.75 + rnd(0, flameW * 0.5);
+			let pmy = h * 0.2 + flameLen * 0.2;
+
+			ctx.fillStyle = grad;
+			ctx.beginPath();
+			ctx.moveTo(-flameW, h * 0.2 + deltaY);
+			ctx.lineTo(-pmx, pmy); //aggiunto un punto medio imprevedibile
+			ctx.lineTo(0, h * 0.2 + flameLen + deltaY);
+			ctx.lineTo(pmx, pmy + deltaY);
+			ctx.lineTo(flameW, h * 0.2 + deltaY);
+			ctx.closePath();
+			ctx.fill();
+			//bordo fiamma?
+			ctx.strokeStyle = textureEnabled ? 'rgba(128,0,0,0.2)' : COLORS_ALPHA[currentColor].replace('xxx', '0.2');
+			ctx.stroke();
+
+			//se sto a manetta
+			if (keyList.includes('ArrowUp')) {
+				//... e sto vicino al terreno
+				let terrainY = getTerrainYAtX(ship.position.x);
+				let isNearTerrain = (terrainY - ship.position.y - ship.size.height / 2) < ship.size.height;
+				//... e non ho gia un polverone che levati proprio
+				if (isNearTerrain && shipSmoke.length < 50) {
+					for (let i = -1; i <= 1; i++) {
+						//aggiunto angolo alla posizione per spostare fumo quando nave inclinata
+						let spostamentoFumo = Math.max(ship.angle + 400, 400) - 400; //angolo negativo: -10 -> 390 -> -10, angolo positivo: 10 -> 410 -> 10
+						spostamentoFumo = Math.min(spostamentoFumo + 400, 450) - 400; //limito al max 50 pixel
+						shipSmoke.push({
+							pos: new Point(ship.position.x - i * ship.size.width / 4 - spostamentoFumo, terrainY),
+							vel: new Point(rnd(-1, 1), rnd(-0.1, 0)),
+							alpha: Math.random() * 2,
+							size: rnd(1, 4)
+						});
+					}
+				}
+			}
+		}
+	}
+
+	//navetta
+	function drawShip() {
+		if (!ship.alive) return; //non disegnare se distrutta
+		
+		if (textureEnabled === 2 && shipImgReady) return drawRealShip();
+
+		const centerX = (ship.position.x - myCam.position.x) * myCam.scale;
+		const centerY = (ship.position.y - myCam.position.y) * myCam.scale;
+		const w = ship.size.width;
+		const h = ship.size.height;
+
+		ctx.save();
+		ctx.translate(centerX, centerY);
+		ctx.scale(myCam.scale, myCam.scale);
+		ctx.rotate(degToRad(ship.angle));
+
+		ctx.lineWidth = 1;
+
+		//hitbox
+		//ctx.strokeStyle = 'red';
+		//ctx.strokeRect( -ship.size.width / 2, -ship.size.height / 2, ship.size.width, ship.size.height );
+
+		let golden = '#f80'; //'#ccc';
+
+		//ottagono (angolo parte da destra, sotto, sinistra, alto... sigh!
+		ctx.strokeStyle = textureEnabled ? '#333' : COLORS[currentColor];
+		const radius = w * 0.28;
+		const sides = 6;
+		const startAngle = 2.4;
+		const endAngle = 7.0;
+		const step = (7.0 - 2.4) / sides; //(Math.PI * 2) / sides;
+
+		ctx.beginPath();
+		for (i = 0; i <= sides; i++) {
+			let angle = startAngle + i * step;
+			const x = Math.cos(angle) * radius;
+			const y = Math.sin(angle) * radius - h * 0.2;
+
+			if (angle === startAngle)
+				ctx.moveTo(x, y);
+			else
+				ctx.lineTo(x, y);
+		}
+		ctx.closePath();
+		if (textureEnabled) {
+			//luce mondo: alto sinistra a 45'
+			const Lx = -0.7;//radice di 2 diviso 2
+			const Ly = -0.7;//radice di 2 diviso 2
+			const a = degToRad(ship.angle);
+			const localLX =  Lx * Math.cos(a) + Ly * Math.sin(a);
+			const localLY = -Lx * Math.sin(a) + Ly * Math.cos(a);
+			
+			//centro del gradiente spostato verso la luce
+			const gradCenterX = localLX * radius * 1.5;//-w * 0.5;
+			const gradCenterY = localLY * radius * 1.5 - h * 0.25;//-h * 0.5;
+			const ballGradient = ctx.createRadialGradient(
+				gradCenterX, gradCenterY, radius * 0.3,
+				gradCenterX, gradCenterY, radius * 2.5);
+			ballGradient.addColorStop(0.0, '#fff');
+			ballGradient.addColorStop(1.0, '#000');
+			ctx.fillStyle = ballGradient;
 			ctx.fill();
 		}
-        ctx.stroke();;
-    }
-}
+		ctx.stroke();
 
-//statistiche in alto (erano in basso su Tranquility Base - TODO!)
-function drawStats(){
-    ctx.fillStyle = COLORS[currentColor];
-	ctx.font = '16px monospace'; 
-	ctx.textAlign = 'left';
-	let x1 = 16;
-	let x2 = vpW/2 - 48;
-	let x3 = vpW - 128;
-    ctx.fillText(`FUEL: ${ship.fuel.toFixed(1)} LBS`,x1,16);
-    ctx.fillText(`ANGLE: ${ship.angle.toFixed(2)} DEG`,x1,32);
-	ctx.fillText(`ALT: ${((getTerrainYAtX(ship.position.x) - ship.position.y - ship.size.height/2)/10).toFixed(2)} M`,x1,48);//50px di navetta == 5mt
-	
-	ctx.fillText(`PX: ${ship.position.x.toFixed(2)}`,x2,16);
-	ctx.fillText(`PY: ${ship.position.y.toFixed(2)}`,x2,32);	
-	ctx.fillText(`VX: ${ship.speed.x.toFixed(2)} M/S`,x3,16);
-	ctx.fillText(`VY: ${ship.speed.y.toFixed(2)} M/S`,x3,32);	
-	
-	ctx.fillText(`Lunar Lander / Tranquility Base - Apple ][ clone`,x1,vpH - 16);
-	ctx.fillText(`[P]ause - [R]eset - [C]olor - [T]exture - [X]canlines toggle`,vpW-540,vpH - 16);
-}
+		//taglia eventuali segmenti che vanno oltre con rettangolone chiaro
+		ctx.beginPath();
+		ctx.fillStyle = textureEnabled ? '#ddd' : '#000';
+		ctx.fillRect(-w * 0.22, 0, w * 0.44, h * 0.20);
 
-//update loop
-function update(){
-	if(!paused) {
-		frames++;
-		ctx.fillStyle='black'; 
-		ctx.fillRect(0,0,vpW,vpH);
+		//parte alta rettangolo grigia scura
+		if (textureEnabled) {
+			ctx.fillStyle = '#222';
+			ctx.fillRect(-w * 0.22, 0, w * 0.44, h * 0.14);
 
-		moveShip();
-		checkCollision();
-		updateTerrain();
-		updateCamera();
-		drawStars();
-		drawRealMountains();
-		drawEarth();		
-		drawTerrain();
-		drawShip();
-		drawStats();
-		updateShipPieces();
-		drawShipPieces();
+			//rettangolo centrale chiaro
+			ctx.fillStyle = '#ddd';
+			ctx.fillRect(-w * 0.05, 0, w * 0.10, h * 0.14);
+		}
+
+		//rettangolo
+		ctx.beginPath();
+		ctx.strokeStyle = textureEnabled ? '#ddd' : COLORS[currentColor];
+		ctx.strokeRect(-w * 0.22, 0, w * 0.44, h * 0.20);
+		ctx.beginPath();
+		ctx.moveTo(-w * 0.22, h * 0.14); //---- orizz sx
+		ctx.lineTo(-w * 0.05, h * 0.14);
+		ctx.stroke();
+		ctx.beginPath();
+		ctx.moveTo(w * 0.22, h * 0.14); //---- orizz dx
+		ctx.lineTo(w * 0.05, h * 0.14);
+		ctx.stroke();
+
+		if (textureEnabled) {
+			//USA flag
+			drawUSFlag(-w * 0.20, h * 0.04, w * 0.14);
+		}
+		//righe verticali
+		ctx.beginPath();
+		ctx.moveTo(-w * 0.05, 0); //--|---|-- a sx
+		ctx.lineTo(-w * 0.05, h * 0.14);
+		ctx.stroke();
+		ctx.beginPath();
+		ctx.moveTo(w * 0.05, 0); //--|---|-- a dx
+		ctx.lineTo(w * 0.05, h * 0.14);
+		ctx.stroke();
+
+		//zampette atterraggio
+		//sx
+		ctx.strokeStyle = textureEnabled ? golden : COLORS[currentColor];
+		ctx.beginPath();
+		ctx.moveTo(-w * 0.22, 0); //attacco alto
+		ctx.lineTo(-w * 0.33, h * 0.09); //alto
+		ctx.lineTo(-w * 0.45, h * 0.47); //centro piede
+		ctx.lineTo(-w * 0.39, h * 0.3); //medio
+		ctx.lineTo(-w * 0.23, h * 0.2); //attacco interno
+		ctx.lineTo(-w * 0.33, h * 0.09); //alto
+		ctx.closePath();
+		ctx.stroke();
+
+		//piede sx
+		ctx.beginPath();
+		ctx.fillStyle = textureEnabled ? golden : '#000';
+		ctx.fillRect(-w * 0.5, h * 0.5, w * 0.10, -h * 0.02);
+		ctx.strokeRect(-w * 0.5, h * 0.5, w * 0.10, -h * 0.02);
+
+		//dx
+		ctx.strokeStyle = textureEnabled ? golden : COLORS[currentColor];
+		ctx.beginPath();
+		ctx.moveTo(w * 0.22, 0); //attacco alto
+		ctx.lineTo(w * 0.33, h * 0.09); //alto
+		ctx.lineTo(w * 0.45, h * 0.47); //centro piede
+		ctx.lineTo(w * 0.39, h * 0.3); //medio
+		ctx.lineTo(w * 0.23, h * 0.2); //attacco interno
+		ctx.lineTo(w * 0.33, h * 0.09); //alto
+		ctx.stroke();
+
+		//piede dx
+		ctx.beginPath();
+		ctx.fillStyle = textureEnabled ? golden : '#000';
+		ctx.fillRect(w * 0.5, h * 0.5, -w * 0.10, -h * 0.02);
+		ctx.strokeRect(w * 0.5, h * 0.5, -w * 0.10, -h * 0.02);
+
+		//FIAMMONE CLAMOROSO
+		drawClamorousFlame(w, h, 0.5);
+
+		//aggiunta terza gamba (rocco approved!)
+		//cx
+		ctx.beginPath();
+		ctx.strokeStyle = textureEnabled ? golden : COLORS[currentColor];
+		ctx.moveTo(-w * 0.08, h * 0.20);
+		ctx.lineTo(0, h * 0.3);
+		ctx.lineTo(0, h * 0.47);
+		ctx.lineTo(0, h * 0.3);
+		ctx.lineTo(w * 0.08, h * 0.20);
+		ctx.stroke();
+
+		ctx.beginPath();
+		ctx.strokeStyle = textureEnabled ? golden : COLORS[currentColor];
+		ctx.moveTo(w * 0.08, h * 0.20);
+		ctx.lineTo(0, h * 0.05); //centro
+		ctx.lineTo(-w * 0.08, h * 0.20);
+		ctx.lineTo(0, h * 0.05);
+		ctx.lineTo(0, h * 0.47);
+		ctx.stroke();
+
+		//piede cx
+		ctx.beginPath();
+		ctx.strokeStyle = textureEnabled ? golden : COLORS[currentColor];
+		ctx.fillStyle = textureEnabled ? golden : '#000';
+		ctx.fillRect(-w * 0.05, h * 0.5, w * 0.1, -h * 0.02);
+		ctx.strokeRect(-w * 0.05, h * 0.5, w * 0.1, -h * 0.02);
+
+		ctx.restore();
 	}
-	
-    requestAnimationFrame(update);
-}
 
+	//god bless america!
+	function drawUSFlag(x, y, fw) {
+		if (!textureEnabled) return;
+		const fh = fw * 0.5; // rapporto 1/2
 
-//init loop
-resetGame();
-update();
+		//sfondo bianco
+		ctx.fillStyle = textureEnabled ? '#fff' : COLORS[currentColor];
+		ctx.fillRect(x, y, fw, fh);
+
+		//strisce rosse
+		ctx.fillStyle = textureEnabled ? '#f00' : '#000';
+		const stripeH = fh / 5;
+		for (let i = 0; i < 5; i += 2) {
+			ctx.fillRect(x, y + i * stripeH, fw, stripeH);
+		}
+
+		//canton blu
+		const cantonW = fw * 0.4;
+		const cantonH = stripeH * 2;
+		ctx.fillStyle = textureEnabled ? '#008' : '#000';
+		ctx.fillRect(x, y, cantonW, cantonH);
+
+		//stelline
+		ctx.fillStyle = '#fff';
+		const starRows = 2;
+		const starCols = 2;
+
+		for (let r = 0; r < starRows; r++) {
+			for (let c = 0; c < starCols; c++) {
+				const sx = x + cantonW * (0.1 + c / starCols);
+				const sy = y + cantonH * (0.15 + r / starRows);
+				ctx.beginPath();
+				ctx.fillRect(sx, sy, fw * 0.05, fw * 0.05);
+				ctx.fill();
+			}
+		}
+	}
+
+	//pezzetti e palle
+	function drawShipPieces() {
+		for (const p of shipPieces) {
+			ctx.strokeStyle = p.color;
+			ctx.save();
+			ctx.translate((p.pos.x - myCam.position.x) * myCam.scale, (p.pos.y - myCam.position.y) * myCam.scale);
+			ctx.rotate(p.angle * Math.PI / 180);
+			ctx.beginPath();
+			ctx.moveTo(p.start.x * myCam.scale, p.start.y * myCam.scale);
+			ctx.lineTo(p.end.x * myCam.scale, p.end.y * myCam.scale);
+			ctx.stroke();
+			ctx.restore();
+		}
+
+		//palle di fumo
+		for (const s of shipSmoke) {
+			ctx.strokeStyle = COLORS_ALPHA[currentColor].replace('xxx', s.alpha);
+			ctx.beginPath();
+			ctx.arc((s.pos.x - myCam.position.x) * myCam.scale, (s.pos.y - myCam.position.y) * myCam.scale, s.size * myCam.scale, 0, Math.PI * 2);
+			if (textureEnabled) {
+				ctx.fillStyle = COLORS_ALPHA[currentColor].replace('xxx', s.alpha / 2);
+				ctx.fill();
+			}
+			ctx.stroke(); ;
+		}
+	}
+
+	//statistiche in alto (erano in basso su Tranquility Base - TODO!)
+	function drawStats() {
+		ctx.fillStyle = COLORS[currentColor];
+		ctx.font = '16px monospace';
+		ctx.textAlign = 'left';
+		let x1 = 16;
+		let x2 = vpW / 2 - 48;
+		let x3 = vpW - 128;
+		ctx.fillText(`FUEL: ${((ship.fuel) / 10).toFixed(2)}%`, x1, 16); //fuel in %
+		ctx.fillText(`ANGLE: ${ship.angle.toFixed(2)} DEG`, x1, 32);
+		ctx.fillText(`ALT: ${((getTerrainYAtX(ship.position.x) - ship.position.y - ship.size.height / 2) / 10).toFixed(2)} M`, x1, 48); //50px di navetta == 5mt
+
+		ctx.fillText(`PX: ${ship.position.x.toFixed(2)}`, x2, 16);
+		ctx.fillText(`PY: ${ship.position.y.toFixed(2)}`, x2, 32);
+		ctx.fillText(`VX: ${ship.speed.x.toFixed(2)} M/S`, x3, 16);
+		ctx.fillText(`VY: ${ship.speed.y.toFixed(2)} M/S`, x3, 32);
+
+		ctx.fillText(`Lunar Lander / Tranquility Base - Apple ][ clone`, x1, vpH - 16);
+		ctx.fillText(`[P]ause - [R]eset - [${currentColor ? 'c' : 'C'}]olor - [${textureEnabled ? 'T' : 't'}]exture - [${scanLinesEnabled ? 'X' : 'x'}]canlines - [${godMode ? 'G' : 'g'}]odMode toggle`, vpW - 640, vpH - 16);
+	}
+
+	//update loop
+	function update() {
+		if (!paused) {
+			frames++;
+			ctx.fillStyle = 'black';
+			ctx.fillRect(0, 0, vpW, vpH);
+
+			moveShip();
+			checkCollision();
+			//updateTerrain(bgTerrain, false);
+			updateTerrain(mainTerrain, true);
+			updateCamera();
+			drawStars();
+			drawRealMountains();
+			drawEarth();
+			//drawTerrain(bgTerrain, 0.3);
+			drawTerrain(mainTerrain, 1);
+			drawShip();
+			drawStats();
+			updateShipPieces();
+			drawShipPieces();
+		}
+
+		requestAnimationFrame(update);
+	}
+
+	//init loop
+	resetGame();
+	update();
 </script>
 </body>
 </html>
