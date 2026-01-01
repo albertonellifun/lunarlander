@@ -85,7 +85,9 @@
 		alive: true, //vivo o esploso
 		landed: false, //se gia atterrato
 		landedAt: 0, //timestamp atterraggio
-		canTakeOff: false //pronto al decollo
+		canTakeOff: false, //pronto al decollo
+		thrust: 0,//potenza del motore 0..1
+		rotate: 0//comando di rotazione 
 	};
 	//let bgTerrain = { vertices:[], landingPlaces:[] };//background
 	let mainTerrain = { vertices: [], landingPlaces: [] }; //terreno
@@ -280,16 +282,40 @@
 			else document.getElementById('scanlines-overlay').style.display = 'none';
 		}
 		if (e.key === 'p' || e.key === 'P') { paused = !paused; }
-		if (e.key === 'ArrowUp' && ship.fuel > 0 && engineSound.paused && !ship.landed && ship.alive) {
-			engineSound.currentTime = 0;
-			engineSound.play();
+		
+		if (e.key === 'ArrowLeft') { ship.rotate = -1; }
+		if (e.key === 'ArrowRight') { ship.rotate = 1; }
+		
+		//se fuel esaurito o allunata o distrutta -> non continuare
+		if (ship.fuel <= 0 || ship.landed || !ship.alive) return;
+		
+		if (e.key === 'ArrowUp') {
+			ship.thrust = 1;
+			if (engineSound.paused) {
+				engineSound.currentTime = 0;
+				engineSound.play();
+			}
+		}
+		if (e.key >= '0' && e.key <= '9') {
+			const level = Number(e.key);//0..9
+			ship.thrust = level ? (level+1)/10 : 0;//0..1
+			if(ship.thrust > 0 && engineSound.paused) {
+				engineSound.currentTime = 0;
+				engineSound.play();
+			}
 		}
 	});
 
+	//potenza piena
 	document.addEventListener('keyup', e => {
 		let idx = keyList.indexOf(e.key);
 		if (idx >= 0) keyList.splice(idx, 1);
-		if (e.key === 'ArrowUp') { engineSound.pause(); }
+		if (e.key === 'ArrowUp') {
+			ship.thrust = 0;
+			engineSound.pause();
+		}
+		if (e.key === 'ArrowLeft' && ship.rotate === -1) { ship.rotate = 0; }
+		if (e.key === 'ArrowRight' && ship.rotate === 1) { ship.rotate = 0; }
 	});
 
 	//resize
@@ -360,7 +386,7 @@
 		if (!ship.alive) return;
 		//if(ship.landed) return;//voglio poter ripartire?
 		if (ship.landed) {
-			if (ship.canTakeOff && keyList.includes('ArrowUp') && ship.fuel > 0) {
+			if (ship.canTakeOff && (keyList.includes('ArrowUp') || keyList.includes('9')) && ship.fuel > 0) {
 				ship.landed = false;
 				ship.canTakeOff = false;
 				ship.position.y -= 1; //altrimenti collisione == nuovo atterraggio
@@ -371,24 +397,18 @@
 				return;
 			}
 		}
-
-		for (const key of keyList) {
-			if (key === 'ArrowRight') {
-				ship.angle += 0.5;
-				if (ship.angle === 360)
-					ship.angle = 0;
-			}
-			if (key === 'ArrowLeft') {
-				ship.angle -= 0.5;
-				if (ship.angle === -360)
-					ship.angle = 0;
-			}
-			if (key === 'ArrowUp' && ship.fuel > 0) {
-				if (!godMode)
-					ship.fuel = Math.max(0, ship.fuel - 1);
-				ship.speed.x += Math.sin(degToRad(ship.angle)) * 0.0175;
-				ship.speed.y -= Math.cos(degToRad(ship.angle)) * 0.0175;
-			}
+		
+		//rotazione
+		ship.angle += ship.rotate * 0.5;
+		if (ship.angle === 360) ship.angle = 0;
+		if (ship.angle === -360) ship.angle = 0;
+		
+		//potenza
+		if (ship.thrust > 0 && ship.fuel > 0) {				
+			if (!godMode)
+				ship.fuel = Math.max(0, ship.fuel - 1 * ship.thrust);
+			ship.speed.x += Math.sin(degToRad(ship.angle)) * 0.0175 * ship.thrust;
+			ship.speed.y -= Math.cos(degToRad(ship.angle)) * 0.0175 * ship.thrust;
 		}
 		ship.speed.y += gravity;
 		ship.speed.x = Math.min(Math.max(ship.speed.x, -maxSpeed), maxSpeed);
@@ -846,8 +866,8 @@
 	//ECCOLO IL FIAMMONE CLAMOROSO!
 	function drawClamorousFlame(w, h, deltaY) {
 		if (ship.fuel > 0 && !ship.landed) {
-			const flameStr = keyList.includes('ArrowUp') ? 0.75 : 0.1;
-			const flameLen = h * (flameStr + Math.random() * flameStr); //fiamma alta
+			const flameStr = ship.thrust > 0 ? 0.75 : 0.1;//keyList.includes('ArrowUp') ? 0.75 : 0.1;
+			const flameLen = h * (flameStr + Math.random() * flameStr) * ship.thrust; //fiamma alta
 			const flameW = w * 0.15; //fiamma stretta
 
 			const grad = ctx.createRadialGradient(0, h * 0.15, 2, //x0, y0, r0
@@ -880,7 +900,7 @@
 			ctx.stroke();
 
 			//se sto a manetta
-			if (keyList.includes('ArrowUp')) {
+			if (ship.thrust > 0) {//keyList.includes('ArrowUp')) {
 				//... e sto vicino al terreno
 				let terrainY = getTerrainYAtX(ship.position.x);
 				let isNearTerrain = (terrainY - ship.position.y - ship.size.height / 2) < ship.size.height;
@@ -1154,6 +1174,7 @@
 		ctx.fillText(`FUEL: ${((ship.fuel) / 10).toFixed(2)}%`, x1, 16); //fuel in %
 		ctx.fillText(`ANGLE: ${ship.angle.toFixed(2)} DEG`, x1, 32);
 		ctx.fillText(`ALT: ${((getTerrainYAtX(ship.position.x) - ship.position.y - ship.size.height / 2) / 10).toFixed(2)} M`, x1, 48); //50px di navetta == 5mt
+		ctx.fillText(`THRUST: ${(ship.thrust*100).toFixed(2)}%`, x1, 64);//potenza motore percentuale
 
 		ctx.fillText(`PX: ${ship.position.x.toFixed(2)}`, x2, 16);
 		ctx.fillText(`PY: ${ship.position.y.toFixed(2)}`, x2, 32);
