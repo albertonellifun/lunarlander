@@ -389,10 +389,11 @@
 			if (ship.canTakeOff && (keyList.includes('ArrowUp') || keyList.includes('9')) && ship.fuel > 0) {
 				ship.landed = false;
 				ship.canTakeOff = false;
-				ship.position.y -= 1; //altrimenti collisione == nuovo atterraggio
+				ship.position.y = getTerrainYAtX(ship.position.x) - ship.size.height / 2 - 1; //altrimenti collisione == nuovo atterraggio
 				landedSound.pause();
 				engineSound.currentTime = 0;
 				engineSound.play();
+				ship.thrust = 1;
 			} else {
 				return;
 			}
@@ -506,6 +507,7 @@
 						ship.speed.y = 0;
 						ship.angle = 0;
 						ship.landedAt = Date.now();
+						engineSound.pause();
 						setTimeout(function () { ship.canTakeOff = true; }, 5000); //dopo 5 secondi puoi decollare di nuovo!
 						landedSound.currentTime = 0;
 						landedSound.play();
@@ -874,8 +876,8 @@
 					0, h * 0.25, flameLen); //x1, y1, r1
 			if (textureEnabled) {
 				grad.addColorStop(0, 'rgba(255,255,255,0.9)');
-				grad.addColorStop(0.4, 'rgba(255,200,50,0.9)');
-				grad.addColorStop(0.5, 'rgba(255,0,0,0.9)');
+				grad.addColorStop(0.5, 'rgba(255,200,50,0.9)');
+				grad.addColorStop(0.66, 'rgba(255,0,0,0.9)');
 				grad.addColorStop(1, 'rgba(255,0,0,0)');
 			} else {
 				grad.addColorStop(0, COLORS_ALPHA[currentColor].replace('xxx', '0.9'));
