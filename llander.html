@@ -286,12 +286,15 @@
 		if (e.key === 'ArrowLeft') { ship.rotate = -1; }
 		if (e.key === 'ArrowRight') { ship.rotate = 1; }
 		
-		//se fuel esaurito o allunata o distrutta -> non continuare
-		if (ship.fuel <= 0 || ship.landed || !ship.alive) return;
+		//se fuel esaurito o distrutta -> non continuare
+		if (!ship.alive || ship.fuel <= 0) {
+			engineSound.pause();
+			return;
+		}
 		
 		if (e.key === 'ArrowUp') {
 			ship.thrust = 1;
-			if (engineSound.paused) {
+			if (engineSound.paused && ship.fuel > 0) {
 				engineSound.currentTime = 0;
 				engineSound.play();
 			}
@@ -299,7 +302,7 @@
 		if (e.key >= '0' && e.key <= '9') {
 			const level = Number(e.key);//0..9
 			ship.thrust = level ? (level+1)/10 : 0;//0..1
-			if(ship.thrust > 0 && engineSound.paused) {
+			if(ship.thrust > 0 && engineSound.paused && ship.fuel > 0) {
 				engineSound.currentTime = 0;
 				engineSound.play();
 			}
@@ -310,7 +313,7 @@
 	document.addEventListener('keyup', e => {
 		let idx = keyList.indexOf(e.key);
 		if (idx >= 0) keyList.splice(idx, 1);
-		if (e.key === 'ArrowUp') {
+		if (e.key === 'ArrowUp' || e.key === '0') {
 			ship.thrust = 0;
 			engineSound.pause();
 		}
@@ -386,7 +389,7 @@
 		if (!ship.alive) return;
 		//if(ship.landed) return;//voglio poter ripartire?
 		if (ship.landed) {
-			if (ship.canTakeOff && (keyList.includes('ArrowUp') || keyList.includes('9')) && ship.fuel > 0) {
+			if (ship.canTakeOff && ship.fuel > 0 && ship.thrust >= 1) {//(keyList.includes('ArrowUp') || keyList.includes('9'))
 				ship.landed = false;
 				ship.canTakeOff = false;
 				ship.position.y = getTerrainYAtX(ship.position.x) - ship.size.height / 2 - 1; //altrimenti collisione == nuovo atterraggio
@@ -406,8 +409,7 @@
 		
 		//potenza
 		if (ship.thrust > 0 && ship.fuel > 0) {				
-			if (!godMode)
-				ship.fuel = Math.max(0, ship.fuel - 1 * ship.thrust);
+			if (!godMode) ship.fuel = Math.max(0, ship.fuel - 1 * ship.thrust);
 			ship.speed.x += Math.sin(degToRad(ship.angle)) * 0.0175 * ship.thrust;
 			ship.speed.y -= Math.cos(degToRad(ship.angle)) * 0.0175 * ship.thrust;
 		}
@@ -570,7 +572,7 @@
 			lin.vel = new Point(rnd(-2, 2), rnd(-2, 0.3)); //-3,0 solo in alto
 			lin.angle = rnd(0, 360);
 			lin.angularVel = rnd(-6, 6); //velocita di rotazione
-			lin.life = 150 + rnd(10, 100);
+			lin.life = rnd(1, 3);//alpha
 			lin.color = textureEnabled && rnd(0, 1) > 0.5 ? '#f80' : COLORS[currentColor];
 			shipPieces.push(lin);
 		}
@@ -581,7 +583,7 @@
 			shipSmoke.push({
 				pos: new Point(ship.position.x, ship.position.y + ship.size.height / 2),
 				vel: new Point(rnd(-3, 3), rnd(-3, 0.3)), //-1,0 solo in alto
-				alpha: Math.random() * 3,
+				alpha: rnd(0, 3),
 				size: 0.1 + rnd(0, 5)
 			});
 		}
@@ -595,7 +597,7 @@
 			p.pos.y += p.vel.y;
 			p.vel.y += gravity;
 			p.angle += p.angularVel;
-			p.life--;
+			p.life -= 0.01;
 			if (p.life <= 0) shipPieces.splice(i, 1);
 		}
 
@@ -867,7 +869,7 @@
 
 	//ECCOLO IL FIAMMONE CLAMOROSO!
 	function drawClamorousFlame(w, h, deltaY) {
-		if (ship.fuel > 0 && !ship.landed) {
+		if (ship.fuel > 0) {// && !ship.landed
 			const flameStr = ship.thrust > 0 ? 0.75 : 0.1;//keyList.includes('ArrowUp') ? 0.75 : 0.1;
 			const flameLen = h * (flameStr + Math.random() * flameStr) * ship.thrust; //fiamma alta
 			const flameW = w * 0.15; //fiamma stretta
@@ -907,7 +909,7 @@
 				let terrainY = getTerrainYAtX(ship.position.x);
 				let isNearTerrain = (terrainY - ship.position.y - ship.size.height / 2) < ship.size.height;
 				//... e non ho gia un polverone che levati proprio
-				if (isNearTerrain && shipSmoke.length < 50) {
+				if (isNearTerrain && shipSmoke.length < 500 * ship.thrust) {
 					for (let i = -1; i <= 1; i++) {
 						//aggiunto angolo alla posizione per spostare fumo quando nave inclinata
 						let spostamentoFumo = Math.max(ship.angle + 400, 400) - 400; //angolo negativo: -10 -> 390 -> -10, angolo positivo: 10 -> 410 -> 10
@@ -1146,6 +1148,10 @@
 			ctx.translate((p.pos.x - myCam.position.x) * myCam.scale, (p.pos.y - myCam.position.y) * myCam.scale);
 			ctx.rotate(p.angle * Math.PI / 180);
 			ctx.beginPath();
+			ctx.moveTo(p.start.x * myCam.scale, p.start.y * myCam.scale);
+			ctx.lineTo(p.end.x * myCam.scale, p.end.y * myCam.scale);
+			ctx.stroke();
+			ctx.strokeStyle = 'rgba(0,0,0,'+(1-p.life);//alpha
 			ctx.moveTo(p.start.x * myCam.scale, p.start.y * myCam.scale);
 			ctx.lineTo(p.end.x * myCam.scale, p.end.y * myCam.scale);
 			ctx.stroke();
