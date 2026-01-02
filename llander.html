@@ -95,7 +95,8 @@
 	let keyList = [];
 	let gravity = 0.0075;
 	let shipPieces = []; //kaboom
-	let shipSmoke = []; //nuvoletta
+	let shipSmoke = []; //nuvoletta di palle di fumo
+	let maxSmokePcs = 300;//massimo numero di palle di fumo
 	let tdelta = 15; //quanto accidentato il terreno
 	let tpieces = 200; //in quanti segmenti suddividere lo schermo in orizzontale
 	let minLandingSpeed = 0.5;
@@ -551,25 +552,21 @@
 	//kaboom
 	function explodeShip() {
 		ship.alive = false;
+		ship.thrust = 0;
+		engineSound.pause();
 		explosionSound.play();
 
 		const w = ship.size.width;
 		const h = ship.size.height;
 
-		//pezzi di navetta
+		//pezzi di navetta (20 bastano?)
 		shipPieces = [];
-		for (let i = -5; i <= 5; i++) {
+		for (let i = -10; i <= 10; i++) {
 			let lin = {};
-			lin.start = {
-				x: -w * i / 30,
-				y: -h * i / 30
-			};
-			lin.end = {
-				x: w * i / 30,
-				y: h * i / 30
-			};
+			lin.start = { x: -w * i / 100, y: -h * i / 100 };
+			lin.end = { x: w * i / 100, y: h * i / 100 };
 			lin.pos = new Point(ship.position.x, ship.position.y + ship.size.height / 3);
-			lin.vel = new Point(rnd(-2, 2), rnd(-2, 0.3)); //-3,0 solo in alto
+			lin.vel = new Point(rnd(-2, 2), rnd(-2, 0.3)); //-2,0 solo in alto
 			lin.angle = rnd(0, 360);
 			lin.angularVel = rnd(-6, 6); //velocita di rotazione
 			lin.life = rnd(1, 3);//alpha
@@ -577,9 +574,8 @@
 			shipPieces.push(lin);
 		}
 
-		//palle di fumo
-		//shipSmoke = [];
-		for (let i = 0; i < 100; i++) {
+		//palle di fumo (max / 2)
+		for (let i = 0; i < maxSmokePcs / 2; i++) {
 			shipSmoke.push({
 				pos: new Point(ship.position.x, ship.position.y + ship.size.height / 2),
 				vel: new Point(rnd(-3, 3), rnd(-3, 0.3)), //-1,0 solo in alto
@@ -620,23 +616,19 @@
 			s.alpha = (s.alpha + 5) % 255;
 			ctx.fillStyle = COLORS_ALPHA[currentColor].replace('xxx', s.alpha / 255);
 			ctx.beginPath();
-			//disegno fisso sullo schermo
-			const x = s.pos.x;
-			const y = s.pos.y;
-			ctx.arc(x, y, 1, 0, Math.PI * 2);
-			ctx.fill();
+			//ctx.arc(s.pos.x, s.pos.y, 1, 0, Math.PI * 2);
+			//ctx.fill();
+			ctx.fillRect(s.pos.x, s.pos.y, 1.5, 1.5);
 		}
 	}
 
 	//madreterra real
 	function drawRealEarth(x, y, r) {
-		if (!textureEnabled)
-			return;
-		if (myCam.scale != 1)
-			return;
-
+		if (!textureEnabled) return;
+		if (myCam.scale != 1) return;
+		
 		ctx.drawImage(earthImg, x - r, y - r, r * 2, r * 2);
-
+		
 		//notte
 		drawNight(x, y, r);
 	}
@@ -828,6 +820,11 @@
 				offsetY + canvas.height * 0.2, //(myCam.position.y * 0.3) % mountainsImg.height,//dall'alto
 				mountainsImg.width,
 				canvas.height);
+			//anche le montagne in parallasse subiscono il filtro colore!
+			ctx.globalCompositeOperation = 'multiply';
+			ctx.fillStyle = COLORS[currentColor];
+			ctx.fillRect(offsetX + x * mountainsImg.width, offsetY + canvas.height * 0.2, mountainsImg.width, canvas.height);
+			ctx.globalCompositeOperation = 'source-over';
 		}
 	}
 
@@ -909,8 +906,12 @@
 				let terrainY = getTerrainYAtX(ship.position.x);
 				let isNearTerrain = (terrainY - ship.position.y - ship.size.height / 2) < ship.size.height;
 				//... e non ho gia un polverone che levati proprio
-				if (isNearTerrain && shipSmoke.length < 500 * ship.thrust) {
+				if (isNearTerrain) {
+					//tolgo le ultime palle di fumo
+					if(shipSmoke.length > maxSmokePcs) shipSmoke.splice(0, shipSmoke.length - maxSmokePcs);
+					//aggiungo nuove palle di fumo
 					for (let i = -1; i <= 1; i++) {
+						if (rnd(0,1) > ship.thrust) continue;//meno palle se poca manetta
 						//aggiunto angolo alla posizione per spostare fumo quando nave inclinata
 						let spostamentoFumo = Math.max(ship.angle + 400, 400) - 400; //angolo negativo: -10 -> 390 -> -10, angolo positivo: 10 -> 410 -> 10
 						spostamentoFumo = Math.min(spostamentoFumo + 400, 450) - 400; //limito al max 50 pixel
@@ -1143,22 +1144,29 @@
 	//pezzetti e palle
 	function drawShipPieces() {
 		for (const p of shipPieces) {
-			ctx.strokeStyle = p.color;
+			const x0 = p.start.x * myCam.scale;
+			const y0 = p.start.y * myCam.scale;
+			const x1 = p.end.x * myCam.scale;
+			const y1 = p.end.y * myCam.scale;
 			ctx.save();
+			ctx.strokeStyle = p.color;
+			ctx.lineWidth = myCam.scale;//pezzi di navetta cicciottelli
 			ctx.translate((p.pos.x - myCam.position.x) * myCam.scale, (p.pos.y - myCam.position.y) * myCam.scale);
 			ctx.rotate(p.angle * Math.PI / 180);
 			ctx.beginPath();
-			ctx.moveTo(p.start.x * myCam.scale, p.start.y * myCam.scale);
-			ctx.lineTo(p.end.x * myCam.scale, p.end.y * myCam.scale);
+			ctx.moveTo(x0, y0);
+			ctx.lineTo(x1, y1);
 			ctx.stroke();
 			ctx.strokeStyle = 'rgba(0,0,0,'+(1-p.life);//alpha
-			ctx.moveTo(p.start.x * myCam.scale, p.start.y * myCam.scale);
-			ctx.lineTo(p.end.x * myCam.scale, p.end.y * myCam.scale);
+			ctx.beginPath();
+			ctx.moveTo(x0, y0);
+			ctx.lineTo(x1, y1);
 			ctx.stroke();
 			ctx.restore();
 		}
 
 		//palle di fumo
+		ctx.lineWidth = 1 / myCam.scale;
 		for (const s of shipSmoke) {
 			ctx.strokeStyle = COLORS_ALPHA[currentColor].replace('xxx', s.alpha);
 			ctx.beginPath();
@@ -1170,6 +1178,8 @@
 			ctx.stroke(); ;
 		}
 	}
+	
+	function n(x) { return x >= 0 ? x.toFixed(2).padStart(7, ' '): x.toFixed(2).padStart(7, ' '); }
 
 	//statistiche in alto (erano in basso su Tranquility Base - TODO!)
 	function drawStats() {
@@ -1177,17 +1187,17 @@
 		ctx.font = '16px monospace';
 		ctx.textAlign = 'left';
 		let x1 = 16;
-		let x2 = vpW / 2 - 48;
-		let x3 = vpW - 128;
-		ctx.fillText(`FUEL: ${((ship.fuel) / 10).toFixed(2)}%`, x1, 16); //fuel in %
-		ctx.fillText(`ANGLE: ${ship.angle.toFixed(2)} DEG`, x1, 32);
-		ctx.fillText(`ALT: ${((getTerrainYAtX(ship.position.x) - ship.position.y - ship.size.height / 2) / 10).toFixed(2)} M`, x1, 48); //50px di navetta == 5mt
-		ctx.fillText(`THRUST: ${(ship.thrust*100).toFixed(2)}%`, x1, 64);//potenza motore percentuale
+		let x2 = vpW / 2 - 50;
+		let x3 = vpW - 140;
+		ctx.fillText(`FUEL:   ${n(ship.fuel/10)} %`, x1, 16); //fuel in %
+		ctx.fillText(`ANGLE:  ${n(ship.angle)} DEG`, x1, 32);
+		ctx.fillText(`THRUST: ${n(ship.thrust*100)} %`, x1, 48);//potenza motore percentuale
+		ctx.fillText(`ALT:    ${n((getTerrainYAtX(ship.position.x) - ship.position.y - ship.size.height / 2) / 10)} M`, x1, 64); //50px di navetta == 5mt
 
-		ctx.fillText(`PX: ${ship.position.x.toFixed(2)}`, x2, 16);
-		ctx.fillText(`PY: ${ship.position.y.toFixed(2)}`, x2, 32);
-		ctx.fillText(`VX: ${ship.speed.x.toFixed(2)} M/S`, x3, 16);
-		ctx.fillText(`VY: ${ship.speed.y.toFixed(2)} M/S`, x3, 32);
+		ctx.fillText(`PX: ${n(ship.position.x)}`, x2, 16);
+		ctx.fillText(`PY: ${n(ship.position.y)}`, x2, 32);
+		ctx.fillText(`VX: ${n(ship.speed.x)} M/S`, x3, 16);
+		ctx.fillText(`VY: ${n(ship.speed.y)} M/S`, x3, 32);
 
 		ctx.fillText(`Lunar Lander / Tranquility Base - Apple ][ clone`, x1, vpH - 16);
 		ctx.fillText(`[P]ause - [R]eset - [${currentColor ? 'c' : 'C'}]olor - [${textureEnabled ? 'T' : 't'}]exture - [${scanLinesEnabled ? 'X' : 'x'}]canlines - [${godMode ? 'G' : 'g'}]odMode toggle`, vpW - 640, vpH - 16);
