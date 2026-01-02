@@ -105,6 +105,9 @@
 	let maxSpeed = 5; //velocita max
 	let godMode = false;
 	let starsList = []; //stelle
+	let windBands = []; //bufera marziana
+	let windSpeed = 0; //velocita vento marziano
+	let windEnabled = false; //abilita/disabilita vento
 
 	//audio
 	const engineSound = new Audio('engine.mp3'); engineSound.loop = true; engineSound.preload = 'auto';
@@ -277,6 +280,11 @@
 		if (e.key === 'c' || e.key === 'C') { currentColor = (currentColor + 1) % COLORS.length; }
 		if (e.key === 't' || e.key === 'T') { textureEnabled = (textureEnabled + 1) % 3; }
 		if (e.key === 'g' || e.key === 'G') { godMode = !godMode; }
+		if (e.key === 'w' || e.key === 'W') { 
+			windEnabled = !windEnabled; 
+			windSpeed = windEnabled ? rnd(-2, 2) : 0;
+			initWindBands();
+		}
 		if (e.key === 'x' || e.key === 'X') { 
 			scanLinesEnabled = !scanLinesEnabled;
 			if (scanLinesEnabled) document.getElementById('scanlines-overlay').style.display = 'block';
@@ -348,6 +356,8 @@
 		//bgTerrain = { vertices:[], landingPlaces:[] }; //terreno vuoto
 		createStars();
 		rockTexture = generateRockTexture();
+		windSpeed = windEnabled ? rnd(-2,2) : 0;
+		initWindBands();
 	}
 
 	//telecamera
@@ -414,7 +424,9 @@
 			ship.speed.x += Math.sin(degToRad(ship.angle)) * 0.0175 * ship.thrust;
 			ship.speed.y -= Math.cos(degToRad(ship.angle)) * 0.0175 * ship.thrust;
 		}
-		ship.speed.y += gravity;
+		ship.speed.y += gravity;//gravita
+		ship.speed.x += windSpeed * 0.002;//vento marziano
+		
 		ship.speed.x = Math.min(Math.max(ship.speed.x, -maxSpeed), maxSpeed);
 		ship.speed.y = Math.min(Math.max(ship.speed.y, -maxSpeed), maxSpeed);
 		ship.position.x += ship.speed.x;
@@ -589,7 +601,7 @@
 	function updateShipPieces() {
 		for (let i = shipPieces.length - 1; i >= 0; i--) {
 			const p = shipPieces[i];
-			p.pos.x += p.vel.x;
+			p.pos.x += (p.vel.x + windSpeed * 0.1);
 			p.pos.y += p.vel.y;
 			p.vel.y += gravity;
 			p.angle += p.angularVel;
@@ -600,7 +612,7 @@
 		//aggiornamento palle di fumo
 		for (let i = shipSmoke.length - 1; i >= 0; i--) {
 			const s = shipSmoke[i];
-			s.pos.x += s.vel.x;
+			s.pos.x += (s.vel.x + windSpeed * 0.1);
 			s.pos.y += s.vel.y;
 			s.vel.y += gravity;
 			s.alpha -= 0.01;
@@ -608,6 +620,83 @@
 			if (s.alpha <= 0 || s.size <= 0) shipSmoke.splice(i, 1);
 		}
 	}
+
+
+	//tempesta marziana
+	function initWindBands() {
+		if(!windEnabled) return;
+		windBands = [];
+		const count = 10;
+		for (let i = 0; i < count; i++) {
+			let depth = (i+1) / count;//0.1 -> 1
+			windBands.push({
+				yOffset: i * (i/2) * 10,//spostamento y
+				speed: (windSpeed * 2) * (1 - depth),//velocita
+				phase: rnd(0, 3.14),//fase
+				alpha: 0.15 * (1 - depth),//trasparenza
+				thickness: depth * 60 * Math.abs(windSpeed),//spessore
+				depth: depth//depth
+			});
+		}
+	}
+
+	//tempesta marziana
+	function drawWindStorm() {
+		if(!windEnabled) return;
+		ctx.save();
+		const scale = myCam.scale;
+		const camX = myCam.position.x;
+		const camY = myCam.position.y;
+		const t = performance.now() * 0.001; // tempo in secondi
+
+		for (const b of windBands) {
+			ctx.strokeStyle = COLORS_ALPHA[currentColor].replace('xxx', b.alpha);
+			ctx.fillStyle = COLORS_ALPHA[currentColor].replace('xxx', b.alpha);
+			ctx.beginPath();
+
+			const points = [];
+
+			// griglia fissa di punti mondo, indipendente dalla camera
+			const step = 10;
+			const startX = Math.floor((camX - 100) / step) * step;
+			const endX = Math.ceil((camX + vpW / scale + 100) / step) * step;
+
+			for (let x = startX; x <= endX; x += step) {
+				const y = getTerrainYAtX(x);
+				if (y === null) continue;
+
+				// Wobble solo in base a x mondo + tempo, non a camera
+				const wobble = Math.sin(x * 0.02 + t * b.speed + b.phase) * b.thickness * (1 - (b.yOffset / 200));
+
+				// coordinate schermo
+				const screenX = (x - camX) * scale;
+				const topY = (y - b.yOffset + wobble - camY) * scale;
+				const bottomY = topY + b.thickness * scale;
+
+				points.push([screenX, topY, bottomY]);
+			}
+
+			if (points.length === 0) continue;
+
+			// linea superiore
+			ctx.moveTo(points[0][0], points[0][1]);
+			for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
+
+			// linea inferiore inversa
+			for (let i = points.length - 1; i >= 0; i--) ctx.lineTo(points[i][0], points[i][2]);
+
+			ctx.closePath();
+			ctx.fill();
+			ctx.stroke();
+		}
+
+		ctx.restore();
+	}
+
+
+
+
+
 
 	//disegno
 	//stelline in cielo sbrilluccicose assai
@@ -654,14 +743,20 @@
 		ctx.arc(x, y, r, 0, Math.PI * 2);
 		ctx.fillStyle = night;
 		ctx.fill();
+		
+		//anche la terra subisce il filtro colore!
+		ctx.globalCompositeOperation = 'multiply';
+		ctx.beginPath();
+		ctx.fillStyle = COLORS[currentColor];
+		ctx.arc(x, y, r, 0, Math.PI * 2);
+		ctx.fill();
+		ctx.globalCompositeOperation = 'source-over';
 	}
 
 	//madreterra
 	function drawEarth() {
-		if (!textureEnabled)
-			return;
-		if (myCam.scale != 1)
-			return;
+		if (!textureEnabled) return;
+		if (myCam.scale != 1) return;
 
 		const r = 40;
 		const x = vpW - 100;
@@ -670,8 +765,7 @@
 		//atmosfera
 		drawAtmos(x, y, r);
 
-		if (textureEnabled === 2 && earthImgReady)
-			return drawRealEarth(x, y, r);
+		if (textureEnabled === 2 && earthImgReady) return drawRealEarth(x, y, r);
 
 		//oceano
 		const ocean = ctx.createRadialGradient(x - r / 2, y - r / 2, 0, x, y, r);
@@ -1188,19 +1282,20 @@
 		ctx.textAlign = 'left';
 		let x1 = 16;
 		let x2 = vpW / 2 - 50;
-		let x3 = vpW - 140;
+		let x3 = vpW - 150;
 		ctx.fillText(`FUEL:   ${n(ship.fuel/10)} %`, x1, 16); //fuel in %
 		ctx.fillText(`ANGLE:  ${n(ship.angle)} DEG`, x1, 32);
 		ctx.fillText(`THRUST: ${n(ship.thrust*100)} %`, x1, 48);//potenza motore percentuale
 		ctx.fillText(`ALT:    ${n((getTerrainYAtX(ship.position.x) - ship.position.y - ship.size.height / 2) / 10)} M`, x1, 64); //50px di navetta == 5mt
 
-		ctx.fillText(`PX: ${n(ship.position.x)}`, x2, 16);
-		ctx.fillText(`PY: ${n(ship.position.y)}`, x2, 32);
-		ctx.fillText(`VX: ${n(ship.speed.x)} M/S`, x3, 16);
-		ctx.fillText(`VY: ${n(ship.speed.y)} M/S`, x3, 32);
+		ctx.fillText(`PX:   ${n(ship.position.x)}`, x2, 16);
+		ctx.fillText(`PY:   ${n(ship.position.y)}`, x2, 32);
+		ctx.fillText(`VX:   ${n(ship.speed.x)} M/S`, x3, 16);
+		ctx.fillText(`VY:   ${n(ship.speed.y)} M/S`, x3, 32);
+		ctx.fillText(`WIND: ${n(windSpeed)} M/S`, x3, 48);
 
 		ctx.fillText(`Lunar Lander / Tranquility Base - Apple ][ clone`, x1, vpH - 16);
-		ctx.fillText(`[P]ause - [R]eset - [${currentColor ? 'c' : 'C'}]olor - [${textureEnabled ? 'T' : 't'}]exture - [${scanLinesEnabled ? 'X' : 'x'}]canlines - [${godMode ? 'G' : 'g'}]odMode toggle`, vpW - 640, vpH - 16);
+		ctx.fillText(`[P]ause - [R]eset - [${currentColor ? 'c' : 'C'}]olor - [${textureEnabled ? 'T' : 't'}]exture - [${scanLinesEnabled ? 'X' : 'x'}]canlines - [${godMode ? 'G' : 'g'}]odMode - [${windEnabled ? 'W' : 'w'}]ind toggle`, vpW - 720, vpH - 16);
 	}
 
 	//update loop
@@ -1215,12 +1310,16 @@
 			//updateTerrain(bgTerrain, false);
 			updateTerrain(mainTerrain, true);
 			updateCamera();
+			
 			drawStars();
 			drawRealMountains();
 			drawEarth();
+			
 			//drawTerrain(bgTerrain, 0.3);
 			drawTerrain(mainTerrain, 1);
 			drawShip();
+			drawWindStorm();
+			
 			drawStats();
 			updateShipPieces();
 			drawShipPieces();
