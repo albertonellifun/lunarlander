@@ -70,7 +70,6 @@
 	}
 
 	//game status
-	let frames = 0;
 	let startTime = Date.now();
 	let shipSize = 50; //dimensioni navetta
 	let ship = {
@@ -93,22 +92,35 @@
 	let mainTerrain = { vertices: [], landingPlaces: [] }; //terreno
 	let myCam = { position: new Point(0, 0), scale: 1 }; //telecamera (aargh!)
 	let keyList = [];
-	let gravity = 0.0075;
+	
+	const METERS_TO_PIXELS = 10;//10px = 1 metro
+	const MOON_GRAVITY = 1.62;//m/s2
+	const GRAVITY = MOON_GRAVITY * METERS_TO_PIXELS;//px/s2
+	
 	let shipPieces = []; //kaboom
 	let shipSmoke = []; //nuvoletta di palle di fumo
-	let maxSmokePcs = 300;//massimo numero di palle di fumo
-	let tdelta = 15; //quanto accidentato il terreno
-	let tpieces = 200; //in quanti segmenti suddividere lo schermo in orizzontale
-	let minLandingSpeed = 0.5;
-	let minLandingAngle = 5;
-	let landingSize = 1.5; //quanto larghe le piazzole di sosta
-	let maxSpeed = 5; //velocita max
+	let MAX_SMOKE_PIECES = 300;//massimo numero di palle di fumo
+	let MAX_SHIP_PIECES = 20;//numero di pezzi di navetta
+	let TERRAIN_DELTA = 15; //quanto accidentato il terreno
+	let TERRAIN_PIECES = 200; //in quanti segmenti suddividere lo schermo in orizzontale
+	
+	const MAX_LANDING_SPEED = 3;//m/s
+	const MAX_LANDING_ANGLE = 6;//gradi
+	const LANDING_SIZE = 1.5;//quanto larghe le piazzole di sosta rispetto la navetta
+	
+	const MAX_SHIP_SPEED = 10;//velocita max della navetta in m/s
+	const MAX_SHIP_POWER = 6;//quanto spinge la navetta (moltiplico poi per thrust 0..1)
+	
 	let godMode = false;
 	let starsList = []; //stelle
 	let windParticles = []; //bufera marziana
 	let windSpeed = 0; //velocita vento marziano
 	let windEnabled = false; //abilita/disabilita vento
-	let windParticlesEffect = 0.3; //quanto il vento sposta la polvere
+	const MAX_WIND_PARTICLES = 300;//quante particelle di polvere nell'aria marziana
+	const WIND_PARTICLES_EFFECT = 0.5;//quanto il vento sposta la polvere
+	const WIND_SHIP_EFFECT = 1;//quanto impedisce alla navetta di raggiungere la velocita massima
+	const MAX_WIND_SPEED = 2;//m/s
+	let lastTime = 0;//FISICA DEVE ESSERE REALE BASATA SUL TEMPO - NO FRAME
 
 	//audio
 	const engineSound = new Audio('engine.mp3'); engineSound.loop = true; engineSound.preload = 'auto';
@@ -207,19 +219,19 @@
 		}
 
 		const buffer = vpW; //margine extra prima di generare terreno
-		const stepX = vpW / tpieces;//distanza tra vertici (schermo / 200)
+		const stepX = vpW / TERRAIN_PIECES;//distanza tra vertici (schermo / 200)
 
 		//estende a dx
 		//finche la nave si avvicina al bordo destro del terreno -> genera vertici!
 		while (ship.position.x + buffer > mainTerrain.vertices[mainTerrain.vertices.length - 1].x) {
 			let lastVertex = mainTerrain.vertices[mainTerrain.vertices.length - 1];
 			let x = lastVertex.x + stepX;
-			let y = lastVertex.y + rnd(-tdelta, tdelta) * 0.75;
-			if (y > vpH) y -= tdelta;
+			let y = lastVertex.y + rnd(-TERRAIN_DELTA, TERRAIN_DELTA) * 0.75;
+			if (y > vpH) y -= TERRAIN_DELTA;
 
 			//landing line casuale se abilitata
 			if (Math.random() < 0.03 && generateLandingLines) {
-				const landingWidth = ship.size.width * landingSize;
+				const landingWidth = ship.size.width * LANDING_SIZE;
 				const ll = new LandingLine(new Point(x, y), new Point(x + landingWidth, y), 2);
 				mainTerrain.landingPlaces.push(ll);
 
@@ -240,12 +252,12 @@
 		while (ship.position.x - buffer < mainTerrain.vertices[0].x) {
 			let firstVertex = mainTerrain.vertices[0];
 			let x = firstVertex.x - stepX;
-			let y = firstVertex.y + rnd(-tdelta, tdelta) * 0.75;
-			if (y > vpH) y -= tdelta;
+			let y = firstVertex.y + rnd(-TERRAIN_DELTA, TERRAIN_DELTA) * 0.75;
+			if (y > vpH) y -= TERRAIN_DELTA;
 			
 			//landing line casuale se abilitata
 			if (Math.random() < 0.03 && generateLandingLines) {
-				const landingWidth = ship.size.width * landingSize;
+				const landingWidth = ship.size.width * LANDING_SIZE;
 				const ll = new LandingLine(new Point(x - landingWidth, y), new Point(x, y), 2);
 				mainTerrain.landingPlaces.push(ll);
 
@@ -258,11 +270,11 @@
 		}
 
 		//toglie vertici lontani a dx
-		while (mainTerrain.vertices.length > tpieces && mainTerrain.vertices[0].x < ship.position.x - buffer * 2) {
+		while (mainTerrain.vertices.length > TERRAIN_PIECES && mainTerrain.vertices[0].x < ship.position.x - buffer * 2) {
 			mainTerrain.vertices.shift();
 		}
 		//toglie vertici lontani a sx
-		while (mainTerrain.vertices.length > tpieces && mainTerrain.vertices[mainTerrain.vertices.length - 1].x > ship.position.x + buffer * 2) {
+		while (mainTerrain.vertices.length > TERRAIN_PIECES && mainTerrain.vertices[mainTerrain.vertices.length - 1].x > ship.position.x + buffer * 2) {
 			mainTerrain.vertices.pop();
 		}
 	}
@@ -285,7 +297,7 @@
 		if (e.key === 'g' || e.key === 'G') { godMode = !godMode; }
 		if (e.key === 'w' || e.key === 'W') { 
 			windEnabled = !windEnabled; 
-			if (windEnabled) { windSpeed = rnd(-2,2); windSound.play(); }
+			if (windEnabled) { windSpeed = rnd(-MAX_WIND_SPEED, MAX_WIND_SPEED); windSound.play(); }
 			else { windSpeed = 0; windSound.pause(); }
 		}
 		if (e.key === 'x' || e.key === 'X') { 
@@ -360,7 +372,7 @@
 		//bgTerrain = { vertices:[], landingPlaces:[] }; //terreno vuoto
 		createStars();
 		rockTexture = generateRockTexture();
-		windSpeed = windEnabled ? rnd(-2,2) : 0;
+		windSpeed = windEnabled ? rnd(-MAX_WIND_SPEED, MAX_WIND_SPEED) : 0;//px/sec
 		initWindParticles();
 	}
 
@@ -400,12 +412,12 @@
 	}
 
 	//movimento navetta
-	function moveShip() {
+	function moveShip(dt) {
 		if (!ship.alive) return;
 		
 		//consumo fuel
 		if (ship.thrust > 0 && ship.fuel > 0) {				
-			if (!godMode) ship.fuel = Math.max(0, ship.fuel - 1 * ship.thrust);
+			if (!godMode) ship.fuel = Math.max(0, ship.fuel - 50 * ship.thrust * dt);//circa 20 secondi di fuel a tromba (50*20=1000)
 			
 			//esaurito
 			if (ship.fuel <= 0) { engineSound.pause(); airSound.play(); }
@@ -426,23 +438,35 @@
 			}
 		}
 		
-		//rotazione
-		ship.angle += ship.rotate * 0.5;
-		if (ship.angle === 360) ship.angle = 0;
-		if (ship.angle === -360) ship.angle = 0;
+		//rotazione (gradi al secondo)
+		ship.angle += ship.rotate * 90 * dt;
+		if (ship.angle >= 360) ship.angle -= 360;
+		if (ship.angle <= -360) ship.angle += 360;
 		
-		//potenza
-		if (ship.thrust > 0 && ship.fuel > 0) {				
-			ship.speed.x += Math.sin(degToRad(ship.angle)) * 0.0175 * ship.thrust;
-			ship.speed.y -= Math.cos(degToRad(ship.angle)) * 0.0175 * ship.thrust;
+		//potenza == spinta motore -> accelerazione
+		if (ship.thrust > 0 && ship.fuel > 0) {
+			const a = degToRad(ship.angle);
+			const thrustAccel = MAX_SHIP_POWER * METERS_TO_PIXELS;//m/s2 -> px/s2
+			ship.speed.x += Math.sin(a) * thrustAccel * ship.thrust * dt;
+			ship.speed.y -= Math.cos(a) * thrustAccel * ship.thrust * dt;
 		}
-		ship.speed.y += gravity;//gravita
-		ship.speed.x += windSpeed * 0.002;//vento marziano
 		
-		ship.speed.x = Math.min(Math.max(ship.speed.x, -maxSpeed), maxSpeed);
-		ship.speed.y = Math.min(Math.max(ship.speed.y, -maxSpeed), maxSpeed);
-		ship.position.x += ship.speed.x;
-		ship.position.y += ship.speed.y;
+		ship.speed.y += GRAVITY * dt;//gravita
+		
+		//vento marziano (tende verso windSpeed)
+		if (windEnabled) {
+			//ship.speed.x += windSpeed * METERS_TO_PIXELS * dt;//forza costante
+			//calcoliamo la differenza tra velocita vento e velocita nave (vento spinge nave lenta, rallenta nave veloce)
+			const windForce = ((windSpeed * METERS_TO_PIXELS) - ship.speed.x) * WIND_SHIP_EFFECT;
+			ship.speed.x += windForce * dt;
+		}
+		
+		ship.speed.x = Math.min(Math.max(ship.speed.x, -MAX_SHIP_SPEED * METERS_TO_PIXELS), MAX_SHIP_SPEED * METERS_TO_PIXELS);
+		ship.speed.y = Math.min(Math.max(ship.speed.y, -MAX_SHIP_SPEED * METERS_TO_PIXELS), MAX_SHIP_SPEED * METERS_TO_PIXELS);
+		
+		//integrazione posizione
+		ship.position.x += ship.speed.x * dt;
+		ship.position.y += ship.speed.y * dt;
 	}
 
 	//collisioni (qui iniziano i dolori)
@@ -509,6 +533,9 @@
 			[box[3], box[0]]
 		];
 
+		const vy = ship.speed.y / METERS_TO_PIXELS;
+		const vx = Math.abs(ship.speed.x / METERS_TO_PIXELS);
+
 		//piattaforme di landing
 		for (const ll of mainTerrain.landingPlaces) {
 			const A = ll.pointA;
@@ -522,7 +549,7 @@
 
 			for (const e of edges) {
 				if (segmentsIntersect(e[0], e[1], A, B)) {
-					if (nearCenterX && nearCenterY && ship.speed.y < minLandingSpeed && ship.speed.x < minLandingSpeed && Math.abs(ship.angle % 360) < minLandingAngle) {
+					if (nearCenterX && nearCenterY && vy < MAX_LANDING_SPEED && vx <= MAX_LANDING_SPEED && Math.abs(ship.angle % 360) < MAX_LANDING_ANGLE) {
 						ship.landed = true;
 						ship.speed.x = 0;
 						ship.speed.y = 0;
@@ -580,12 +607,12 @@
 
 		//pezzi di navetta (20 bastano?)
 		shipPieces = [];
-		for (let i = -10; i <= 10; i++) {
+		for (let i = -MAX_SHIP_PIECES/2; i <  MAX_SHIP_PIECES / 2; i++) {
 			let lin = {};
-			lin.start = { x: -w * i / 100, y: -h * i / 100 };
-			lin.end = { x: w * i / 100, y: h * i / 100 };
+			lin.start = { x: -w * i / 50, y: -h * i / 50 };
+			lin.end = { x: w * i / 50, y: h * i / 50 };
 			lin.pos = new Point(ship.position.x, ship.position.y + ship.size.height / 3);
-			lin.vel = new Point(rnd(-2, 2), rnd(-2, 0.3)); //-2,0 solo in alto
+			lin.vel = new Point(rnd(-200, 200), rnd(-200, 30)); //-2,0 solo in alto
 			lin.angle = rnd(0, 360);
 			lin.angularVel = rnd(-6, 6); //velocita di rotazione
 			lin.life = rnd(1, 3);//alpha
@@ -594,77 +621,78 @@
 		}
 
 		//palle di fumo (max / 2)
-		for (let i = 0; i < maxSmokePcs / 2; i++) {
+		for (let i = 0; i < MAX_SMOKE_PIECES / 2; i++) {
 			shipSmoke.push({
 				pos: new Point(ship.position.x, ship.position.y + ship.size.height / 2),
-				vel: new Point(rnd(-3, 3), rnd(-3, 0.3)), //-1,0 solo in alto
+				vel: new Point(rnd(-2 * METERS_TO_PIXELS, 2 * METERS_TO_PIXELS), rnd(-2 * METERS_TO_PIXELS, 0.2 * METERS_TO_PIXELS)), //-1,0 solo in alto
 				alpha: rnd(0, 3),
-				size: 0.1 + rnd(0, 5)
+				size: 0.1 + rnd(0, 3)
 			});
 		}
 	}
 
 	//aggiorna pezzi e palle :-)
-	function updateParticles() {
-		//pezzi di astronave
+	function updateParticles(dt) {
+		const windSpeedPixel = windSpeed * METERS_TO_PIXELS;
+		
+		//pezzi navetta
 		for (let i = shipPieces.length - 1; i >= 0; i--) {
 			const p = shipPieces[i];
-			p.pos.x += p.vel.x;
-			p.pos.y += p.vel.y;
-			p.vel.y += gravity;
-			if (!windEnabled) {
-				p.vel.x *= 0.99;//rallenta orizzontalmente
-				p.vel.y *= 0.99;//rallenta verticalmente?
-			} else {
-				p.vel.x = p.vel.x + (windSpeed - p.vel.x) * 0.1 * windParticlesEffect;
-			}
-			p.angle += p.angularVel;
-			p.life -= 0.01;
+			p.vel.y += GRAVITY * dt;
+			p.vel.x += (windSpeedPixel - p.vel.x) * dt * WIND_PARTICLES_EFFECT;
+			p.pos.x += p.vel.x * dt;
+			p.pos.y += p.vel.y * dt;
+			p.angle += p.angularVel * dt;
+			p.life -= dt;
 			if (p.life <= 0) shipPieces.splice(i, 1);
 		}
 
-		//aggiornamento palle di fumo
+		//palle di fumo
 		for (let i = shipSmoke.length - 1; i >= 0; i--) {
 			const s = shipSmoke[i];
-			s.pos.x += s.vel.x;
-			s.pos.y += s.vel.y;
-			s.vel.y += s.size < 2 ? -0.0051 : gravity;//non subisce la gravita se piccola
-			if (!windEnabled) {
-				s.vel.x *= 0.99;//rallenta orizzontalmente
-				s.vel.y *= 0.99;//rallenta verticalmente
-			} else {
-				s.vel.x = s.vel.x + (windSpeed - s.vel.x) * 0.1 * windParticlesEffect;
-				s.vel.y *= 0.99;//rallenta verticalmente
-			}
-			s.alpha -= 0.01;
-			s.size -= 0.01;
+			s.vel.y += GRAVITY * dt * 0.1;//subisce meno la gravita
+			s.vel.x += (windSpeedPixel - s.vel.x) * dt * WIND_PARTICLES_EFFECT;
+
+			s.pos.x += s.vel.x * dt * METERS_TO_PIXELS;
+			s.pos.y += s.vel.y * dt * METERS_TO_PIXELS;
+
+			s.alpha -= dt * 0.1;
+			s.size  -= dt;
+
 			if (s.alpha <= 0 || s.size <= 0) shipSmoke.splice(i, 1);
 		}
-		
-		//tempesta marziana
+
+		//vento marziano
 		if (!windEnabled) return;
 
-		//aggiorna prima di disegnare il vento
-		for (let i = windParticles.length - 1; i >= 0; i--) {
-			const s = windParticles[i];
-			s.pos.x += (s.vel.x * windSpeed) + (windSpeed * windParticlesEffect);
-			s.pos.y += s.vel.y;
-			s.alpha -= 0.001;//meno delle palle di fumo
-			s.size -= 0.001;//meno delle palle di fumo
+		for (const s of windParticles) {
+			s.vel.x += (windSpeedPixel - s.vel.x) * dt * WIND_PARTICLES_EFFECT;
+			
+			s.pos.x += s.vel.x * dt * METERS_TO_PIXELS;
+			s.pos.y += s.vel.y * dt * METERS_TO_PIXELS;
+
+			s.alpha -= dt * 0.1;
+			s.size  -= dt * 0.5;
+			
+			//se la particella esce dallo schermo, la rigeneriamo dal lato opposto
+			if (s.pos.x > ship.position.x + vpW/2) s.pos.x = ship.position.x - vpW/2;
+			if (s.pos.x < ship.position.x - vpW/2) s.pos.x = ship.position.x + vpW/2;
+
 			if (s.alpha <= 0 || s.size <= 0) {
-				//windParticles.splice(i, 1);
-				s.pos = new Point(rnd(ship.position.x - vpW/2, ship.position.x + vpW/2), rnd(0, vpH));
+				s.pos.x = rnd(ship.position.x - vpW/2, ship.position.x + vpW/2);
+				s.pos.y = rnd(0, vpH);
 				s.alpha = rnd(0, 1);
 				s.size = 0.1 + rnd(0, 2);
 			}
 		}
 	}
 
+
 	//vento marziano
 	function initWindParticles() {
 		windParticles = [];
 		
-		for (let i = 0; i < 300; i++) {
+		for (let i = 0; i < MAX_WIND_PARTICLES; i++) {
 			windParticles.push({
 				pos: new Point(rnd(ship.position.x - vpW/2, ship.position.x + vpW/2), rnd(0, vpH)),
 				vel: new Point( rnd(0,1), 0 ),
@@ -978,7 +1006,7 @@
 				//... e non ho gia un polverone che levati proprio
 				if (isNearTerrain) {
 					//tolgo le ultime palle di fumo
-					if(shipSmoke.length > maxSmokePcs) shipSmoke.splice(0, shipSmoke.length - maxSmokePcs);
+					if(shipSmoke.length > MAX_SMOKE_PIECES) shipSmoke.splice(0, shipSmoke.length - MAX_SMOKE_PIECES);
 					//aggiungo nuove palle di fumo
 					for (let i = -1; i <= 1; i++) {
 						if (rnd(0,1) > ship.thrust) continue;//meno palle se poca manetta
@@ -987,8 +1015,8 @@
 						spostamentoFumo = Math.min(spostamentoFumo + 400, 450) - 400; //limito al max 50 pixel
 						shipSmoke.push({
 							pos: new Point(ship.position.x - i * ship.size.width / 4 - spostamentoFumo, terrainY),
-							vel: new Point(rnd(-2 * ship.thrust, 2 * ship.thrust), rnd(-0.1, 0.1)),
-							alpha: Math.random() * 2,
+							vel: new Point(rnd(-1 * ship.thrust * METERS_TO_PIXELS, 1 * ship.thrust * METERS_TO_PIXELS), rnd(-0.1 * METERS_TO_PIXELS, 0.1 * METERS_TO_PIXELS)),
+							alpha: 0.1 + rnd(0,2),
 							size: rnd(0, 3)
 						});
 					}
@@ -1265,7 +1293,7 @@
 		}
 	}
 	
-	function n(x) { return x >= 0 ? x.toFixed(2).padStart(7, ' '): x.toFixed(2).padStart(7, ' '); }
+	function n(x) { if(x === undefined || x === null) return ''; return x >= 0 ? x.toFixed(2).padStart(7, ' '): x.toFixed(2).padStart(7, ' '); }
 
 	//statistiche in alto (erano in basso su Tranquility Base - TODO!)
 	function drawStats() {
@@ -1278,26 +1306,31 @@
 		ctx.fillText(`FUEL:   ${n(ship.fuel/10)} %`, x1, 16); //fuel in %
 		ctx.fillText(`ANGLE:  ${n(ship.angle)} DEG`, x1, 32);
 		ctx.fillText(`THRUST: ${n(ship.thrust*100)} %`, x1, 48);//potenza motore percentuale
-		ctx.fillText(`ALT:    ${n((getTerrainYAtX(ship.position.x) - ship.position.y - ship.size.height / 2) / 10)} M`, x1, 64); //50px di navetta == 5mt
+		ctx.fillText(`TIME:   ${n(lastTime / 1000)} S`, x1, 64);		
+		
+		ctx.fillText(`PX:  ${n(ship.position.x / METERS_TO_PIXELS)} M`, x2, 16);
+		ctx.fillText(`PY:  ${n(ship.position.y / METERS_TO_PIXELS)} M`, x2, 32);
+		ctx.fillText(`ALT: ${n((getTerrainYAtX(ship.position.x) - ship.position.y - ship.size.height / 2) / METERS_TO_PIXELS)} M`, x2, 48); //50px di navetta == 5mt
 
-		ctx.fillText(`PX:   ${n(ship.position.x)}`, x2, 16);
-		ctx.fillText(`PY:   ${n(ship.position.y)}`, x2, 32);
-		ctx.fillText(`VX:   ${n(ship.speed.x)} M/S`, x3, 16);
-		ctx.fillText(`VY:   ${n(ship.speed.y)} M/S`, x3, 32);
+		ctx.fillText(`VX:   ${n(ship.speed.x / METERS_TO_PIXELS)} M/S`, x3, 16);
+		ctx.fillText(`VY:   ${n(ship.speed.y / METERS_TO_PIXELS)} M/S`, x3, 32);
 		ctx.fillText(`WIND: ${n(windSpeed)} M/S`, x3, 48);
 
 		ctx.fillText(`Lunar Lander / Tranquility Base - Apple ][ clone`, x1, vpH - 16);
 		ctx.fillText(`[p]ause - [r]eset - [${currentColor ? 'C' : 'c'}]olor - [${textureEnabled ? 'T' : 't'}]exture - [${scanLinesEnabled ? 'X' : 'x'}]canlines - [${godMode ? 'G' : 'g'}]odMode - [${windEnabled ? 'W' : 'w'}]ind toggle`, vpW - 720, vpH - 16);
 	}
 
+
 	//update loop
-	function update() {
+	function update(now) {
+		const dt = Math.min((now - lastTime) / 1000, 0.033);//secondi
+		lastTime = now;
+
 		if (!paused) {
-			frames++;
 			ctx.fillStyle = 'black';
 			ctx.fillRect(0, 0, vpW, vpH);
 
-			moveShip();
+			moveShip(dt);
 			checkCollision();
 			//updateTerrain(bgTerrain, false);
 			updateTerrain(mainTerrain, true);
@@ -1311,7 +1344,7 @@
 			drawTerrain(mainTerrain, 1);
 			drawShip();
 			
-			updateParticles();
+			updateParticles(dt);
 			drawParticles();
 			
 			drawStats();
@@ -1322,7 +1355,7 @@
 
 	//init loop
 	resetGame();
-	update();
+	requestAnimationFrame(update);
 </script>
 </body>
 </html>
