@@ -71,22 +71,22 @@
 
 	//game status
 	let startTime = Date.now();
-	let shipSize = 50; //dimensioni navetta
+	let shipSize = 50;//dimensioni navetta in px
 	let ship = {
 		position: new Point(vpW / 2, shipSize),
 		size: {
 			width: shipSize,
 			height: shipSize
 		},
-		speed: new Point(0, 0),
-		angle: 0,
-		fuel: 999, //quanto carburante a bordo
+		speed: new Point(0, 0),//vx,vy 
+		angle: 0, //inclinazione in gradi
+		fuel: 999, //quanto carburante a bordo (mostro come % ma uso come intero)
 		alive: true, //vivo o esploso
 		landed: false, //se gia atterrato
 		landedAt: 0, //timestamp atterraggio
 		canTakeOff: false, //pronto al decollo
-		thrust: 0,//potenza del motore 0..1
-		rotate: 0//comando di rotazione 
+		thrust: 0, //potenza del motore 0..1
+		rotate: 0 //comando di rotazione 
 	};
 	//let bgTerrain = { vertices:[], landingPlaces:[] };//background
 	let mainTerrain = { vertices: [], landingPlaces: [] }; //terreno
@@ -121,6 +121,7 @@
 	const WIND_SHIP_EFFECT = 1;//quanto impedisce alla navetta di raggiungere la velocita massima
 	const MAX_WIND_SPEED = 2;//m/s
 	let lastTime = 0;//FISICA DEVE ESSERE REALE BASATA SUL TEMPO - NO FRAME
+	let plantedFlags = [];//dove sono atterrato con successo, pianto una bandierina ammericana
 
 	//audio
 	const engineSound = new Audio('engine.mp3'); engineSound.loop = true; engineSound.preload = 'auto';
@@ -325,7 +326,7 @@
 		}
 		if (e.key >= '0' && e.key <= '9') {
 			const level = Number(e.key);//0..9
-			ship.thrust = level ? (level+1)/10 : 0;//0..1
+			ship.thrust = level ? (level+1)/10 : 0;//0..1 -> 0..10..20..100%
 			if(ship.thrust > 0 && engineSound.paused && ship.fuel > 0) {
 				engineSound.currentTime = 0;
 				engineSound.play();
@@ -560,6 +561,8 @@
 						setTimeout(function () { ship.canTakeOff = true; }, 5000); //dopo 5 secondi puoi decollare di nuovo!
 						landedSound.currentTime = 0;
 						landedSound.play();
+						// pianta la bandierina USA 
+						plantedFlags.push({ x: landingCenterX });
 						return;
 					} else {
 						if (!godMode)
@@ -1120,7 +1123,7 @@
 
 		if (textureEnabled) {
 			//USA flag
-			drawUSFlag(-w * 0.20, h * 0.04, w * 0.14);
+			drawUSFlag(-w * 0.20, h * 0.04, w * 0.14, 1);
 		}
 		//righe verticali
 		ctx.beginPath();
@@ -1202,23 +1205,23 @@
 	}
 
 	//god bless america!
-	function drawUSFlag(x, y, fw) {
+	function drawUSFlag(x, y, fw, dir) {
 		if (!textureEnabled) return;
 		const fh = fw * 0.5; // rapporto 1/2
 
 		//sfondo bianco
 		ctx.fillStyle = textureEnabled ? '#fff' : COLORS[currentColor];
-		ctx.fillRect(x, y, fw, fh);
+		ctx.fillRect(x, y, fw * dir, fh);
 
 		//strisce rosse
 		ctx.fillStyle = textureEnabled ? '#f00' : '#000';
 		const stripeH = fh / 5;
 		for (let i = 0; i < 5; i += 2) {
-			ctx.fillRect(x, y + i * stripeH, fw, stripeH);
+			ctx.fillRect(x, y + i * stripeH, fw * dir, stripeH);
 		}
 
 		//canton blu
-		const cantonW = fw * 0.4;
+		const cantonW = fw * 0.4 * dir;
 		const cantonH = stripeH * 2;
 		ctx.fillStyle = textureEnabled ? '#008' : '#000';
 		ctx.fillRect(x, y, cantonW, cantonH);
@@ -1295,6 +1298,33 @@
 	
 	function n(x) { if(x === undefined || x === null) return ''; return x >= 0 ? x.toFixed(2).padStart(7, ' '): x.toFixed(2).padStart(7, ' '); }
 
+	//dove sono atterrato
+	function drawPlantedFlags() {
+		if (!textureEnabled) return;
+		ctx.save();
+		ctx.scale(myCam.scale, myCam.scale);
+		ctx.translate(-myCam.position.x, -myCam.position.y);
+		for (const f of plantedFlags) {
+			const poleH = 20;
+			const flagW = 12;
+			const flagH = 6;
+			//palo
+			ctx.strokeStyle = COLORS[currentColor];
+			ctx.lineWidth = 1 / myCam.scale;
+			ctx.beginPath();
+			let flagx = f.x + 3 * ship.size.width / 5;
+			let flagy = getTerrainYAtX(flagx);
+			ctx.moveTo(flagx, flagy);
+			ctx.lineTo(flagx, flagy - poleH);
+			ctx.stroke();
+			//bandiera USA
+			drawUSFlag( flagx, flagy - poleH, flagW, windSpeed >= 0 ? 1 : -1 );
+		}
+		ctx.restore();
+	}
+
+	
+
 	//statistiche in alto (erano in basso su Tranquility Base - TODO!)
 	function drawStats() {
 		ctx.fillStyle = COLORS[currentColor];
@@ -1343,6 +1373,7 @@
 			//drawTerrain(bgTerrain, 0.3);
 			drawTerrain(mainTerrain, 1);
 			drawShip();
+			drawPlantedFlags();
 			
 			updateParticles(dt);
 			drawParticles();
