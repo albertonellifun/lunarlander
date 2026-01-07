@@ -128,6 +128,15 @@
 	const landedSound = new Audio('landed.mp3'); landedSound.loop = false; landedSound.preload = 'auto';
 	const windSound = new Audio('wind.mp3'); windSound.loop = true; windSound.preload = 'auto';
 	const airSound = new Audio('air.mp3'); airSound.loop = false; airSound.preload = 'auto';
+	//messaggi (start...end, velocita testo, posizione e chi lo dice (0=capcom, 1=armstrong)
+	const landingMessages = [
+		{ text: "We copy you down Eagle", start: 0, end: 3000, delay: 50, y: -48, src: 0 },
+		{ text: "Houston... Tranquility Base here. The Eagle has landed!", start: 3000, end: 11000, delay: 130, y: 0, src: 1 },
+		{ text: "Roger Tranquility. We copy you on the ground.", start: 11000, end: 25000, delay: 50, y: -48, src: 0 },
+		{ text: "You got a bunch of guys about to turn blue.", start: 13000, end: 25000, delay: 50, y: -32, src: 0 },
+		{ text: "We are breathing again. Thanks a lot!", start: 15000, end: 25000, delay: 50, y: -16, src: 0 } 
+	];
+
 
 	//real ship
 	const shipImg = new Image();
@@ -399,6 +408,7 @@
 		rockTexture = generateRockTexture();
 		windSpeed = windEnabled ? rnd(-MAX_WIND_SPEED, MAX_WIND_SPEED) : 0;//px/sec
 		initWindParticles();
+		plantedFlags = [];//bandierine (e' carino lasciarle per i posteri)
 	}
 
 	//telecamera
@@ -579,6 +589,7 @@
 						ship.speed.x = 0;
 						ship.speed.y = 0;
 						ship.angle = 0;
+						ship.position.y = getTerrainYAtX(ship.position.x) - ship.size.height / 2;//altrimenti altezza pochi cm da terra
 						ship.landedAt = Date.now();
 						engineSound.pause();
 						airSound.play();
@@ -1347,8 +1358,37 @@
 		}
 		ctx.restore();
 	}
-
 	
+	//messaggio di armstrong
+	function drawLandingText() {
+		if (!ship.landed) return;
+
+		const delta = Date.now() - ship.landedAt;
+
+		ctx.font = '16px monospace';
+		ctx.textAlign = 'center';
+		ctx.textBaseline = 'bottom';
+
+		//tremolio da crt
+		const sx = (ship.position.x - myCam.position.x) * myCam.scale + rnd(-0.5, 0.5);
+		const sy = (ship.position.y - myCam.position.y) * myCam.scale + rnd(-0.5, 0.5) - 100;//sopra la navetta
+
+		for (const msg of landingMessages) {
+			//mostra solo se siamo tra start ed end
+			if (delta < msg.start || delta > msg.end) continue;
+
+			//ogni delay ms appare un nuovo carattere
+			const chars = Math.min(
+				msg.text.length,
+				Math.floor((delta - msg.start) / msg.delay)
+			);
+			if (chars <= 0) continue;
+
+			ctx.fillStyle = msg.src === 0 ? COLORS_ALPHA[currentColor].replace('xxx', '0.5') : COLORS[currentColor];
+			ctx.fillText( msg.text.substring(0, chars), sx, sy + msg.y );
+		}
+	}
+
 
 	//statistiche in alto (erano in basso su Tranquility Base - TODO!)
 	function drawStats() {
@@ -1399,6 +1439,7 @@
 			drawTerrain(mainTerrain, 1);
 			drawShip();
 			drawPlantedFlags();
+			drawLandingText();
 			
 			updateParticles(dt);
 			drawParticles();
