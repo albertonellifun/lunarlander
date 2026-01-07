@@ -59,7 +59,6 @@
 		constructor(a, b, m) {
 			this.pointA = a;
 			this.pointB = b;
-			this.multiply = m;
 		}
 	}
 	class Star {
@@ -221,7 +220,8 @@
 
 		const buffer = vpW; //margine extra prima di generare terreno
 		const stepX = vpW / TERRAIN_PIECES;//distanza tra vertici (schermo / 200)
-
+		const landingWidth = ship.size.width * LANDING_SIZE;
+		
 		//estende a dx
 		//finche la nave si avvicina al bordo destro del terreno -> genera vertici!
 		while (ship.position.x + buffer > mainTerrain.vertices[mainTerrain.vertices.length - 1].x) {
@@ -230,21 +230,22 @@
 			let y = lastVertex.y + rnd(-TERRAIN_DELTA, TERRAIN_DELTA) * 0.75;
 			if (y > vpH) y -= TERRAIN_DELTA;
 
+			//vertice normale
+			mainTerrain.vertices.push(new Point(x, y));
+
 			//landing line casuale se abilitata
+			//nota: x < x+landingWidth < smoothX
 			if (Math.random() < 0.03 && generateLandingLines) {
-				const landingWidth = ship.size.width * LANDING_SIZE;
-				const ll = new LandingLine(new Point(x, y), new Point(x + landingWidth, y), 2);
+				const ll = new LandingLine(new Point(x, y), new Point(x + landingWidth, y));
 				mainTerrain.landingPlaces.push(ll);
 
 				//aggiungi vertici della landing line
-				mainTerrain.vertices.push(new Point(x, y));
 				mainTerrain.vertices.push(new Point(x + landingWidth, y));
 
-				//salta x per evitare vertice subito dopo
-				x += landingWidth;
-			} else {
-				//vertice normale
-				mainTerrain.vertices.push(new Point(x, y));
+				//vertice di transizione morbido dopo la landing
+				const smoothX = x + landingWidth + stepX;
+				const smoothY = y + rnd(-TERRAIN_DELTA * 0.3, TERRAIN_DELTA * 0.3);
+				mainTerrain.vertices.push(new Point(smoothX, smoothY));
 			}
 		}
 
@@ -256,29 +257,52 @@
 			let y = firstVertex.y + rnd(-TERRAIN_DELTA, TERRAIN_DELTA) * 0.75;
 			if (y > vpH) y -= TERRAIN_DELTA;
 			
+			//vertice normale
+			mainTerrain.vertices.unshift(new Point(x, y));
+			
 			//landing line casuale se abilitata
+			//nota: smoothX < x-landingWidth < x
+			//unshift inverte l'ordine!
 			if (Math.random() < 0.03 && generateLandingLines) {
-				const landingWidth = ship.size.width * LANDING_SIZE;
-				const ll = new LandingLine(new Point(x - landingWidth, y), new Point(x, y), 2);
+				const ll = new LandingLine(new Point(x - landingWidth, y), new Point(x, y));
 				mainTerrain.landingPlaces.push(ll);
 
-				//aggiungi vertici in ordine decrescente per unshift
-				mainTerrain.vertices.unshift(new Point(x, y));
-				mainTerrain.vertices.unshift(new Point(x - landingWidth, y));
-			} else {
-				mainTerrain.vertices.unshift(new Point(x, y));
+				//aggiungi vertici della landing line
+				mainTerrain.vertices.unshift(new Point(x - landingWidth, y)); 
+				
+				//vertice di transizione morbido (prima della landing)
+				const smoothX = x - landingWidth - stepX;
+				const smoothY = y + rnd(-TERRAIN_DELTA * 0.3, TERRAIN_DELTA * 0.3);
+				mainTerrain.vertices.unshift(new Point(smoothX, smoothY)); 
 			}
 		}
 
+		//limiti oltre i quali rimuovere vertici + landings
+		const leftLimit = ship.position.x - buffer * 2;
+		const rightLimit = ship.position.x + buffer * 2;
+		
 		//toglie vertici lontani a dx
-		while (mainTerrain.vertices.length > TERRAIN_PIECES && mainTerrain.vertices[0].x < ship.position.x - buffer * 2) {
+		while (mainTerrain.vertices.length > TERRAIN_PIECES && mainTerrain.vertices[0].x < leftLimit) {
 			mainTerrain.vertices.shift();
 		}
 		//toglie vertici lontani a sx
-		while (mainTerrain.vertices.length > TERRAIN_PIECES && mainTerrain.vertices[mainTerrain.vertices.length - 1].x > ship.position.x + buffer * 2) {
+		while (mainTerrain.vertices.length > TERRAIN_PIECES && mainTerrain.vertices[mainTerrain.vertices.length - 1].x > rightLimit) {
 			mainTerrain.vertices.pop();
 		}
+		
+		//togli landing lontane
+		for (let lpidx = mainTerrain.landingPlaces.length - 1; lpidx >= 0; lpidx--) {
+			let lp = mainTerrain.landingPlaces[lpidx];
+			//estremi
+			let lpx_min = Math.min(lp.pointA.x, lp.pointB.x); 
+			let lpx_maj = Math.max(lp.pointA.x, lp.pointB.x);
+			
+			if ( lpx_maj < leftLimit || lpx_min > rightLimit ) {
+				mainTerrain.landingPlaces.splice(lpidx, 1);//rimuove
+			}
+		}
 	}
+
 
 	//stelline
 	function createStars() {
@@ -1296,6 +1320,7 @@
 		}
 	}
 	
+	//usato da stats
 	function n(x) { if(x === undefined || x === null) return ''; return x >= 0 ? x.toFixed(2).padStart(7, ' '): x.toFixed(2).padStart(7, ' '); }
 
 	//dove sono atterrato
