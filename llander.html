@@ -993,7 +993,7 @@
 		ctx.drawImage(shipImg, -w / 2, -h / 2, w, h);
 
 		//FIAMMONE CLAMOROSO
-		drawClamorousFlame(w, h, 4);
+		drawClamorousFlame(w, h, 0.5);
 
 		ctx.restore();
 	}
@@ -1008,12 +1008,12 @@
 			const grad = ctx.createRadialGradient(0, h * 0.15, 2, //x0, y0, r0
 					0, h * 0.25, flameLen); //x1, y1, r1
 			if (textureEnabled) {
-				grad.addColorStop(0, 'rgba(255,255,255,0.9)');
-				grad.addColorStop(0.5, 'rgba(255,200,50,0.9)');
-				grad.addColorStop(0.66, 'rgba(255,0,0,0.9)');
+				grad.addColorStop(0, 'rgba(255,255,255,0.8)');
+				grad.addColorStop(0.5, 'rgba(255,200,50,0.8)');
+				grad.addColorStop(0.66, 'rgba(255,0,0,0.8)');
 				grad.addColorStop(1, 'rgba(255,0,0,0)');
 			} else {
-				grad.addColorStop(0, COLORS_ALPHA[currentColor].replace('xxx', '0.9'));
+				grad.addColorStop(0, COLORS_ALPHA[currentColor].replace('xxx', '0.8'));
 				grad.addColorStop(1, COLORS_ALPHA[currentColor].replace('xxx', '0'));
 			}
 
@@ -1024,7 +1024,7 @@
 			ctx.fillStyle = grad;
 			ctx.beginPath();
 			ctx.moveTo(-flameW, h * 0.2 + deltaY);
-			ctx.lineTo(-pmx, pmy); //aggiunto un punto medio imprevedibile
+			ctx.lineTo(-pmx, pmy + deltaY); //aggiunto un punto medio imprevedibile
 			ctx.lineTo(0, h * 0.2 + flameLen + deltaY);
 			ctx.lineTo(pmx, pmy + deltaY);
 			ctx.lineTo(flameW, h * 0.2 + deltaY);
