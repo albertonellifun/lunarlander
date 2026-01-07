@@ -130,11 +130,11 @@
 	const airSound = new Audio('air.mp3'); airSound.loop = false; airSound.preload = 'auto';
 	//messaggi (start...end, velocita testo, posizione e chi lo dice (0=capcom, 1=armstrong)
 	const landingMessages = [
-		{ text: "We copy you down Eagle", start: 0, end: 3000, delay: 50, y: -48, src: 0 },
-		{ text: "Houston... Tranquility Base here. The Eagle has landed!", start: 3000, end: 11000, delay: 130, y: 0, src: 1 },
-		{ text: "Roger Tranquility. We copy you on the ground.", start: 11000, end: 25000, delay: 50, y: -48, src: 0 },
-		{ text: "You got a bunch of guys about to turn blue.", start: 13000, end: 25000, delay: 50, y: -32, src: 0 },
-		{ text: "We are breathing again. Thanks a lot!", start: 15000, end: 25000, delay: 50, y: -16, src: 0 } 
+		{ text: "We copy you down Eagle", start: 0, end: 5000, delay: 50, x: 240, y: -160, src: 0 },
+		{ text: "Houston... Tranquility Base here. The Eagle has landed!", start: 3000, end: 13000, delay: 130, x: 0, y: 0, src: 1 },
+		{ text: "Roger Tranquility. We copy you on the ground.", start: 10000, end: 22000, delay: 50, x: 240, y: -144, src: 0 },
+		{ text: "You got a bunch of guys about to turn blue.", start: 13000, end: 22000, delay: 50, x: 240, y: -128, src: 0 },
+		{ text: "We are breathing again. Thanks a lot!", start: 15000, end: 22000, delay: 50, x: 240, y: -112, src: 0 } 
 	];
 
 
@@ -597,7 +597,7 @@
 						landedSound.currentTime = 0;
 						landedSound.play();
 						// pianta la bandierina USA 
-						plantedFlags.push({ x: landingCenterX });
+						plantedFlags.push({ xship: ship.position.x, xland: landingCenterX });
 						return;
 					} else {
 						if (!godMode)
@@ -756,7 +756,6 @@
 	//madreterra real
 	function drawRealEarth(x, y, r) {
 		if (!textureEnabled) return;
-		if (myCam.scale != 1) return;
 		
 		ctx.drawImage(earthImg, x - r, y - r, r * 2, r * 2);
 		
@@ -798,8 +797,7 @@
 	//madreterra
 	function drawEarth() {
 		if (!textureEnabled) return;
-		if (myCam.scale != 1) return;
-
+		
 		const r = 40;
 		const x = vpW - 100;
 		const y = 60;
@@ -1348,7 +1346,14 @@
 			ctx.strokeStyle = COLORS[currentColor];
 			ctx.lineWidth = 1 / myCam.scale;
 			ctx.beginPath();
-			let flagx = f.x + 3 * ship.size.width / 5;
+			let flagx = 0;
+			if(f.xland >= f.xship) {
+				//atterrato sulla sinistra -> bandiera a dx
+				flagx = f.xland + 3 * ship.size.width / 5;
+			} else {
+				//atterrato sulla destra -> bandiera a sx
+				flagx = f.xland - 3 * ship.size.width / 5;
+			}			
 			let flagy = getTerrainYAtX(flagx);
 			ctx.moveTo(flagx, flagy);
 			ctx.lineTo(flagx, flagy - poleH);
@@ -1371,7 +1376,7 @@
 
 		//tremolio da crt
 		const sx = (ship.position.x - myCam.position.x) * myCam.scale + rnd(-0.5, 0.5);
-		const sy = (ship.position.y - myCam.position.y) * myCam.scale + rnd(-0.5, 0.5) - 100;//sopra la navetta
+		const sy = (ship.position.y - myCam.position.y) * myCam.scale + rnd(-0.5, 0.5) - 100;//100px sopra la navetta
 
 		for (const msg of landingMessages) {
 			//mostra solo se siamo tra start ed end
@@ -1385,7 +1390,7 @@
 			if (chars <= 0) continue;
 
 			ctx.fillStyle = msg.src === 0 ? COLORS_ALPHA[currentColor].replace('xxx', '0.5') : COLORS[currentColor];
-			ctx.fillText( msg.text.substring(0, chars), sx, sy + msg.y );
+			ctx.fillText( msg.text.substring(0, chars), sx + msg.x, sy + msg.y );
 		}
 	}
 
