@@ -130,13 +130,13 @@
 	const airSound = new Audio('air.mp3'); airSound.loop = false; airSound.preload = 'auto';
 	//messaggi (start...end, velocita testo, posizione e chi lo dice (0=capcom, 1=armstrong)
 	const landingMessages = [
-		{ text: "We copy you down Eagle", start: 0, end: 5000, delay: 50, x: 240, y: -160, src: 0 },
-		{ text: "Houston...", start: 3000, end: 14000, delay: 150, x: 0, y: -32, src: 1 },
-		{ text: "Tranquility Base here.", start: 6500, end: 14000, delay: 100, x: 0, y: -16, src: 1 },
-		{ text: "The Eagle has landed!", start: 8500, end: 14000, delay: 100, x: 0, y: 0, src: 1 },
-		{ text: "Roger Tranquility. We copy you on the ground.", start: 10000, end: 20000, delay: 50, x: 240, y: -144, src: 0 },
-		{ text: "You got a bunch of guys about to turn blue.", start: 13000, end: 20000, delay: 50, x: 240, y: -128, src: 0 },
-		{ text: "We are breathing again. Thanks a lot!", start: 15000, end: 20000, delay: 50, x: 240, y: -112, src: 0 } 
+		{ text: "We copy you down Eagle", start: 0, end: 5000, delay: 50, dy: -48, src: 0 },
+		{ text: "Houston...", start: 3000, end: 14000, delay: 150, dy: -32, src: 1 },
+		{ text: "Tranquility Base here.", start: 6500, end: 14000, delay: 100, dy: -16, src: 1 },
+		{ text: "The Eagle has landed!", start: 8500, end: 14000, delay: 100, dy: 0, src: 1 },
+		{ text: "Roger Tranquility. We copy you on the ground.", start: 10000, end: 18000, delay: 50, dy: -32, src: 0 },
+		{ text: "You got a bunch of guys about to turn blue.", start: 13000, end: 18000, delay: 50, dy: -16, src: 0 },
+		{ text: "We are breathing again. Thanks a lot!", start: 15000, end: 18000, delay: 50, dy: 0, src: 0 } 
 	];
 	let radioWaves = [];//a noi ci piacciono un sacco gli effetti speciali ;)
 
@@ -596,11 +596,12 @@
 						ship.landedAt = Date.now();
 						engineSound.pause();
 						airSound.play();
-						setTimeout(function () { ship.canTakeOff = true; }, 5000); //dopo 5 secondi puoi decollare di nuovo!
+						setTimeout(function () { 
+							ship.canTakeOff = true; //dopo 8.5 secondi puoi decollare di nuovo!
+							plantedFlags.push({ xship: ship.position.x, xland: landingCenterX });//pianta anche la bandierina USA 
+							}, 8500); 
 						landedSound.currentTime = 0;
 						landedSound.play();
-						// pianta la bandierina USA 
-						plantedFlags.push({ xship: ship.position.x, xland: landingCenterX });
 						return;
 					} else {
 						if (!godMode)
@@ -1388,10 +1389,6 @@
 		ctx.textAlign = 'center';
 		ctx.textBaseline = 'bottom';
 
-		//tremolio da crt
-		const sx = (ship.position.x - myCam.position.x) * myCam.scale + rnd(-0.5, 0.5);
-		const sy = (ship.position.y - myCam.position.y) * myCam.scale + rnd(-0.5, 0.5) - 100;//100px sopra la navetta
-
 		for (const msg of landingMessages) {
 			//mostra solo se siamo tra start ed end
 			if (delta < msg.start || delta > msg.end) { msg.spawned = false; continue; }
@@ -1402,9 +1399,21 @@
 				Math.floor((delta - msg.start) / msg.delay)
 			);
 			if (chars <= 0) continue;
+			
+			if (msg.src === 0) {
+				//capcom
+				const sx = vpW - 260 + rnd(-0.5, 0.5);//terra centrata in wpW - 100, raggio 60
+				const sy = 160 + rnd(-0.5, 0.5);//100px sotto la terra
+				ctx.fillStyle = COLORS_ALPHA[currentColor].replace('xxx', '0.5');
+				ctx.fillText( msg.text.substring(0, chars), sx, sy + msg.dy);
 
-			ctx.fillStyle = msg.src === 0 ? COLORS_ALPHA[currentColor].replace('xxx', '0.5') : COLORS[currentColor];
-			ctx.fillText( msg.text.substring(0, chars), sx + msg.x, sy + msg.y );
+			} else {
+				//armstrong
+				const sx = (ship.position.x - myCam.position.x) * myCam.scale + rnd(-0.5, 0.5) + 50;//50px verso destra
+				const sy = (ship.position.y - myCam.position.y) * myCam.scale + rnd(-0.5, 0.5) - 100;//100px sopra la navetta
+				ctx.fillStyle = msg.src === 0 ? COLORS_ALPHA[currentColor].replace('xxx', '0.5') : COLORS[currentColor];
+				ctx.fillText( msg.text.substring(0, chars), sx, sy + msg.dy );
+			}
 			
 			//disegna onde radio ;)
 			if (!msg.spawned && delta >= msg.start) {
@@ -1426,7 +1435,7 @@
 	//onde radio!
 	function spawnRadioWaves(x, y, minRadius, src) {
 		for (let i = 0; i < 3; i++) {
-			radioWaves.push({ x, y, r: minRadius + i * 30, alpha: 1, speed: 12 + i * 10, src: src });
+			radioWaves.push({ x, y, r: minRadius + i * 25, alpha: 1, speed: 10 + i * 25, src: src });
 		}
 	}
 	
@@ -1434,7 +1443,7 @@
 		for (let i = radioWaves.length - 1; i >= 0; i--) {
 			const w = radioWaves[i];
 			w.r += w.speed * dt;
-			w.alpha -= dt * 0.3;
+			w.alpha -= dt * 0.4;
 			if (w.alpha <= 0) radioWaves.splice(i, 1);
 		}
 	}
