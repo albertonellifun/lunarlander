@@ -131,11 +131,14 @@
 	//messaggi (start...end, velocita testo, posizione e chi lo dice (0=capcom, 1=armstrong)
 	const landingMessages = [
 		{ text: "We copy you down Eagle", start: 0, end: 5000, delay: 50, x: 240, y: -160, src: 0 },
-		{ text: "Houston... Tranquility Base here. The Eagle has landed!", start: 3000, end: 13000, delay: 130, x: 0, y: 0, src: 1 },
-		{ text: "Roger Tranquility. We copy you on the ground.", start: 10000, end: 22000, delay: 50, x: 240, y: -144, src: 0 },
-		{ text: "You got a bunch of guys about to turn blue.", start: 13000, end: 22000, delay: 50, x: 240, y: -128, src: 0 },
-		{ text: "We are breathing again. Thanks a lot!", start: 15000, end: 22000, delay: 50, x: 240, y: -112, src: 0 } 
+		{ text: "Houston...", start: 3000, end: 14000, delay: 150, x: 0, y: -32, src: 1 },
+		{ text: "Tranquility Base here.", start: 6500, end: 14000, delay: 100, x: 0, y: -16, src: 1 },
+		{ text: "The Eagle has landed!", start: 8500, end: 14000, delay: 100, x: 0, y: 0, src: 1 },
+		{ text: "Roger Tranquility. We copy you on the ground.", start: 10000, end: 20000, delay: 50, x: 240, y: -144, src: 0 },
+		{ text: "You got a bunch of guys about to turn blue.", start: 13000, end: 20000, delay: 50, x: 240, y: -128, src: 0 },
+		{ text: "We are breathing again. Thanks a lot!", start: 15000, end: 20000, delay: 50, x: 240, y: -112, src: 0 } 
 	];
+	let radioWaves = [];//a noi ci piacciono un sacco gli effetti speciali ;)
 
 
 	//real ship
@@ -712,6 +715,10 @@
 			s.alpha -= dt * 0.1;
 			s.size  -= dt * 0.5;
 			
+			//oscillazione particelle
+			s.phase += dt * s.freq;
+			s.pos.y = s.baseY + Math.sin(s.phase) * s.amp;
+			
 			//se la particella esce dallo schermo, la rigeneriamo dal lato opposto
 			if (s.pos.x > ship.position.x + vpW/2) s.pos.x = ship.position.x - vpW/2;
 			if (s.pos.x < ship.position.x - vpW/2) s.pos.x = ship.position.x + vpW/2;
@@ -719,6 +726,7 @@
 			if (s.alpha <= 0 || s.size <= 0) {
 				s.pos.x = rnd(ship.position.x - vpW/2, ship.position.x + vpW/2);
 				s.pos.y = rnd(0, vpH);
+				s.baseY = s.pos.y;
 				s.alpha = rnd(0, 1);
 				s.size = 0.1 + rnd(0, 2);
 			}
@@ -731,11 +739,17 @@
 		windParticles = [];
 		
 		for (let i = 0; i < MAX_WIND_PARTICLES; i++) {
+			const py = rnd(0, vpH);
 			windParticles.push({
-				pos: new Point(rnd(ship.position.x - vpW/2, ship.position.x + vpW/2), rnd(0, vpH)),
+				pos: new Point(rnd(ship.position.x - vpW/2, ship.position.x + vpW/2), py),
 				vel: new Point( rnd(0,1), 0 ),
 				alpha: rnd(0, 1),
-				size: 0.1 + rnd(0, 2)
+				size: 0.1 + rnd(0, 2),
+				//oscillazione particelle
+				amp: 2 + rnd(0,4),
+				freq: 1.5 + rnd(0,1),
+				phase: rnd(0, 6.28),
+				baseY: py
 			});
 		}
 	}
@@ -1380,7 +1394,7 @@
 
 		for (const msg of landingMessages) {
 			//mostra solo se siamo tra start ed end
-			if (delta < msg.start || delta > msg.end) continue;
+			if (delta < msg.start || delta > msg.end) { msg.spawned = false; continue; }
 
 			//ogni delay ms appare un nuovo carattere
 			const chars = Math.min(
@@ -1391,6 +1405,47 @@
 
 			ctx.fillStyle = msg.src === 0 ? COLORS_ALPHA[currentColor].replace('xxx', '0.5') : COLORS[currentColor];
 			ctx.fillText( msg.text.substring(0, chars), sx + msg.x, sy + msg.y );
+			
+			//disegna onde radio ;)
+			if (!msg.spawned && delta >= msg.start) {
+				msg.spawned = true;
+				
+				if (msg.src === 0) {
+					//attorno alla terra
+					spawnRadioWaves(vpW - 100, 60, 40, msg.src);
+				} else {					
+					//attorno alla navetta
+					const shipx = (ship.position.x - myCam.position.x) * myCam.scale;
+					const shipy = (ship.position.y - myCam.position.y) * myCam.scale - ship.size.height / 2;
+					spawnRadioWaves(shipx, shipy, ship.size.height, msg.src);
+				}
+			}
+		}
+	}
+	
+	//onde radio!
+	function spawnRadioWaves(x, y, minRadius, src) {
+		for (let i = 0; i < 3; i++) {
+			radioWaves.push({ x, y, r: minRadius + i * 30, alpha: 1, speed: 12 + i * 10, src: src });
+		}
+	}
+	
+	function updateRadioWaves(dt) {
+		for (let i = radioWaves.length - 1; i >= 0; i--) {
+			const w = radioWaves[i];
+			w.r += w.speed * dt;
+			w.alpha -= dt * 0.3;
+			if (w.alpha <= 0) radioWaves.splice(i, 1);
+		}
+	}
+	
+	function drawRadioWaves() {
+		for (const w of radioWaves) {
+			ctx.strokeStyle = COLORS_ALPHA[currentColor].replace('xxx', w.alpha * 0.5);
+			ctx.lineWidth = 1;
+			ctx.beginPath();
+			ctx.arc(w.x, w.y, w.r, w.src === 0 ? Math.PI * 0.55 : Math.PI * 1.55, w.src === 0 ? Math.PI * 0.95: Math.PI * 1.95);
+			ctx.stroke();
 		}
 	}
 
@@ -1439,6 +1494,7 @@
 			drawStars();
 			drawRealMountains();
 			drawEarth();
+			drawRadioWaves();
 			
 			//drawTerrain(bgTerrain, 0.3);
 			drawTerrain(mainTerrain, 1);
@@ -1447,6 +1503,7 @@
 			drawLandingText();
 			
 			updateParticles(dt);
+			updateRadioWaves(dt);
 			drawParticles();
 			
 			drawStats();
