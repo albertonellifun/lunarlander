@@ -655,7 +655,7 @@
 			lin.start = { x: -w * i / 50, y: -h * i / 50 };
 			lin.end = { x: w * i / 50, y: h * i / 50 };
 			lin.pos = new Point(ship.position.x, ship.position.y + ship.size.height / 3);
-			lin.vel = new Point(rnd(-200, 200), rnd(-200, 30)); //-2,0 solo in alto
+			lin.vel = new Point(rnd(-200, 200) + ship.speed.x, rnd(-200, 30) + ship.speed.y); //-2,0 solo in alto
 			lin.angle = rnd(0, 360);
 			lin.angularVel = rnd(-6, 6); //velocita di rotazione
 			lin.life = rnd(1, 3);//alpha
@@ -885,52 +885,47 @@
 	function drawTerrain(mainTerrain, parallaxFactor) {
 		ctx.save();
 
-		//porta il canvas nello spazio mondo
+		// porta il canvas nello spazio mondo
 		ctx.scale(myCam.scale, myCam.scale);
 		ctx.translate(-myCam.position.x * parallaxFactor, -myCam.position.y);
 
+		// === SHAPE TERRENO ===
 		ctx.beginPath();
-
 		const v0 = mainTerrain.vertices[0];
 		ctx.moveTo(v0.x, v0.y);
 
-		//massimo y del terreno
 		let maxY = 0;
-
 		for (let i = 1; i < mainTerrain.vertices.length; i++) {
 			const v = mainTerrain.vertices[i];
 			ctx.lineTo(v.x, v.y);
-			if (maxY < v.y)
-				maxY = v.y;
+			if (v.y > maxY) maxY = v.y;
 		}
 
-		//chiudi il terreno con un bottom fisso rispetto ai vertici
 		const last = mainTerrain.vertices[mainTerrain.vertices.length - 1];
-		const bottomY = maxY + 500; //vpH + 200
+		const bottomY = maxY + 500;
 		ctx.lineTo(last.x, bottomY);
 		ctx.lineTo(v0.x, bottomY);
 		ctx.closePath();
 
-		//pulizia da stelle che appaiono nel terreno
+		// pulizia stelle sotto il terreno
 		ctx.fillStyle = 'black';
 		ctx.fill();
 
+		// === TEXTURE / GRADIENT ===
 		if (textureEnabled) {
-			//gradiente IN WORLD SPACE
 			const grad = ctx.createLinearGradient(
-					0, myCam.position.y,
-					0, myCam.position.y + vpH / myCam.scale);
+				0, myCam.position.y,
+				0, myCam.position.y + vpH / myCam.scale
+			);
 			grad.addColorStop(0, COLORS_ALPHA[currentColor].replace('xxx', '0.2'));
 			grad.addColorStop(1, 'rgba(0,0,0,1)');
 			ctx.fillStyle = grad;
 			ctx.fill();
 
 			if (textureEnabled === 2) {
-				//texture jpg
 				ctx.globalCompositeOperation = 'darken';
 				ctx.fillStyle = terrainPattern;
 			} else {
-				//texture rocciosa che SCORRE col terreno (ASTEROIDS non lo fa?)
 				ctx.globalCompositeOperation = 'multiply';
 				ctx.fillStyle = rockTexture;
 			}
@@ -938,13 +933,49 @@
 			ctx.globalCompositeOperation = 'source-over';
 		}
 
-		//contorno
+		//contorno bianco
 		ctx.strokeStyle = textureEnabled ? COLORS_ALPHA[currentColor].replace('xxx', '0.25') : COLORS[currentColor];
 		ctx.lineWidth = 1 / myCam.scale;
 		ctx.stroke();
+		
+		//fake 3d se textured
+		if (textureEnabled) {
+			const shadowOffset = 16 / myCam.scale;
+			for (let i = 0; i < mainTerrain.vertices.length - 1; i++) {
+				const a = mainTerrain.vertices[i];
+				const b = mainTerrain.vertices[i + 1];
 
+				const dx = b.x - a.x;
+				const dy = b.y - a.y;
+
+				ctx.strokeStyle = dy <= 0 ? COLORS_ALPHA[currentColor].replace('xxx','0.25') : 'rgba(0,0,0,0.5)';//colpo di sole o di ombra sulla cresta
+				ctx.lineWidth = 1 / myCam.scale;
+				
+				ctx.beginPath();
+				ctx.moveTo(a.x, a.y);
+				ctx.lineTo(b.x, b.y);
+				ctx.stroke();
+				
+				if (dy <= 0) continue;//solo segmenti che scendono fanno ombra 3d!
+
+				//intensita in base alla pendenza
+				const slope = Math.min(1, dy / (Math.abs(dx) + 1));
+				const alpha = 0.25 * slope;
+
+				ctx.strokeStyle = `rgba(0,0,0,${alpha})`;
+				ctx.lineWidth = 16 / myCam.scale;
+				
+				ctx.beginPath();
+				ctx.moveTo(a.x, a.y + shadowOffset);
+				ctx.lineTo(b.x, b.y + shadowOffset);
+				ctx.stroke();
+			}
+		}
+		
 		//landing lines
+		ctx.strokeStyle = textureEnabled ? COLORS_ALPHA[currentColor].replace('xxx', '0.25') : COLORS[currentColor];
 		ctx.lineWidth = 2 / myCam.scale;
+
 		for (const ll of mainTerrain.landingPlaces) {
 			ctx.beginPath();
 			ctx.moveTo(ll.pointA.x, ll.pointA.y);
@@ -954,6 +985,7 @@
 
 		ctx.restore();
 	}
+
 
 	//montagne lunari
 	function drawRealMountains() {
