@@ -885,15 +885,15 @@
 	function drawTerrain(mainTerrain, parallaxFactor) {
 		ctx.save();
 
-		// porta il canvas nello spazio mondo
+		//porta il canvas nello spazio mondo
 		ctx.scale(myCam.scale, myCam.scale);
 		ctx.translate(-myCam.position.x * parallaxFactor, -myCam.position.y);
 
-		// === SHAPE TERRENO ===
 		ctx.beginPath();
 		const v0 = mainTerrain.vertices[0];
 		ctx.moveTo(v0.x, v0.y);
 
+		//massimo y del terreno
 		let maxY = 0;
 		for (let i = 1; i < mainTerrain.vertices.length; i++) {
 			const v = mainTerrain.vertices[i];
@@ -901,18 +901,19 @@
 			if (v.y > maxY) maxY = v.y;
 		}
 
+		//chiudi il terreno con un bottom fisso rispetto ai vertici
 		const last = mainTerrain.vertices[mainTerrain.vertices.length - 1];
-		const bottomY = maxY + 500;
+		const bottomY = maxY + 500;//vpH + 200
 		ctx.lineTo(last.x, bottomY);
 		ctx.lineTo(v0.x, bottomY);
 		ctx.closePath();
 
-		// pulizia stelle sotto il terreno
+		//pulizia stelle sotto il terreno
 		ctx.fillStyle = 'black';
 		ctx.fill();
 
-		// === TEXTURE / GRADIENT ===
 		if (textureEnabled) {
+			//gradiente IN WORLD SPACE
 			const grad = ctx.createLinearGradient(
 				0, myCam.position.y,
 				0, myCam.position.y + vpH / myCam.scale
@@ -923,9 +924,11 @@
 			ctx.fill();
 
 			if (textureEnabled === 2) {
+				//texture jpg
 				ctx.globalCompositeOperation = 'darken';
 				ctx.fillStyle = terrainPattern;
 			} else {
+				//texture rocciosa che SCORRE col terreno (ASTEROIDS non lo fa?)
 				ctx.globalCompositeOperation = 'multiply';
 				ctx.fillStyle = rockTexture;
 			}
@@ -948,7 +951,8 @@
 				const dx = b.x - a.x;
 				const dy = b.y - a.y;
 
-				ctx.strokeStyle = dy <= 0 ? COLORS_ALPHA[currentColor].replace('xxx','0.25') : 'rgba(0,0,0,0.5)';//colpo di sole o di ombra sulla cresta
+				//colpo di sole o di ombra sulla cresta (poesia++)
+				ctx.strokeStyle = dy <= 0 ? COLORS_ALPHA[currentColor].replace('xxx','0.25') : 'rgba(0,0,0,0.5)';
 				ctx.lineWidth = 1 / myCam.scale;
 				
 				ctx.beginPath();
