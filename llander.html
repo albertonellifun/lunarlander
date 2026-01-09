@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -854,7 +855,7 @@
 		for (let i = 0; i <= points; i++) {
 			const angle = (i / points) * Math.PI * 2;
 
-			// raggio variabile per creare frastagliatura
+			//raggio variabile per creare frastagliatura
 			const seed = i * 928371 + cx * 12345 + cy * 54321;
 			const rand = seededRandom(seed);
 			const r = baseR + (rand - 0.5) * irregularity;
@@ -874,7 +875,7 @@
 
 	//grazie chatgpt
 	function seededRandom(seed) {
-		// hash veloce e deterministico
+		//hash veloce e deterministico
 		seed = (seed ^ 0x6C8E9CF570932BD5) >>> 0;
 		seed = (seed * 0x6C8E9CF5) >>> 0;
 		return (seed >>> 8) / 0xFFFFFF;
@@ -985,7 +986,7 @@
 
 			if (x >= A.x && x <= B.x) {
 				const t = (x - A.x) / (B.x - A.x);
-				return A.y + t * (B.y - A.y); // interpolazione lineare
+				return A.y + t * (B.y - A.y); //interpolazione lineare
 			}
 		}
 		return null;
@@ -1015,7 +1016,7 @@
 
 	//ECCOLO IL FIAMMONE CLAMOROSO!
 	function drawClamorousFlame(w, h, deltaY) {
-		if (ship.fuel > 0) {// && !ship.landed
+		if (ship.fuel > 0) {
 			const flameStr = ship.thrust > 0 ? 0.75 : 0.1;//keyList.includes('ArrowUp') ? 0.75 : 0.1;
 			const flameLen = h * (flameStr + Math.random() * flameStr) * ship.thrust; //fiamma alta
 			const flameW = w * 0.15; //fiamma stretta
@@ -1184,78 +1185,68 @@
 		ctx.stroke();
 
 		//zampette atterraggio
-		//sx
-		ctx.strokeStyle = textureEnabled ? golden : COLORS[currentColor];
-		ctx.beginPath();
-		ctx.moveTo(-w * 0.22, 0); //attacco alto
-		ctx.lineTo(-w * 0.33, h * 0.09); //alto
-		ctx.lineTo(-w * 0.45, h * 0.47); //centro piede
-		ctx.lineTo(-w * 0.39, h * 0.3); //medio
-		ctx.lineTo(-w * 0.23, h * 0.2); //attacco interno
-		ctx.lineTo(-w * 0.33, h * 0.09); //alto
-		ctx.closePath();
-		ctx.stroke();
-
-		//piede sx
-		ctx.beginPath();
-		ctx.fillStyle = textureEnabled ? golden : '#000';
-		ctx.fillRect(-w * 0.5, h * 0.5, w * 0.10, -h * 0.02);
-		ctx.strokeRect(-w * 0.5, h * 0.5, w * 0.10, -h * 0.02);
-
-		//dx
-		ctx.strokeStyle = textureEnabled ? golden : COLORS[currentColor];
-		ctx.beginPath();
-		ctx.moveTo(w * 0.22, 0); //attacco alto
-		ctx.lineTo(w * 0.33, h * 0.09); //alto
-		ctx.lineTo(w * 0.45, h * 0.47); //centro piede
-		ctx.lineTo(w * 0.39, h * 0.3); //medio
-		ctx.lineTo(w * 0.23, h * 0.2); //attacco interno
-		ctx.lineTo(w * 0.33, h * 0.09); //alto
-		ctx.stroke();
-
-		//piede dx
-		ctx.beginPath();
-		ctx.fillStyle = textureEnabled ? golden : '#000';
-		ctx.fillRect(w * 0.5, h * 0.5, -w * 0.10, -h * 0.02);
-		ctx.strokeRect(w * 0.5, h * 0.5, -w * 0.10, -h * 0.02);
+		drawZampetta(w, h, golden, -1);//sx
+		drawZampetta(w, h, golden, 1);//dx
 
 		//FIAMMONE CLAMOROSO
 		drawClamorousFlame(w, h, 0.5);
 
-		//aggiunta terza gamba (rocco approved!)
-		//cx
+		//aggiunta terza gamba davanti al fiammone
+		drawZampaCentrale(w, h, golden, 1);//cx
+		
+		ctx.restore();
+	}
+	
+	//zampetta uhauhauha
+	function drawZampetta(w, h, col, k) {
+		//gamba
+		ctx.strokeStyle = textureEnabled ? col : COLORS[currentColor];
 		ctx.beginPath();
-		ctx.strokeStyle = textureEnabled ? golden : COLORS[currentColor];
-		ctx.moveTo(-w * 0.08, h * 0.20);
+		ctx.moveTo(k * w * 0.22, 0); //attacco alto
+		ctx.lineTo(k * w * 0.33, h * 0.09); //alto
+		ctx.lineTo(k * w * 0.45, h * 0.47); //centro piede
+		ctx.lineTo(k * w * 0.39, h * 0.3); //medio
+		ctx.lineTo(k * w * 0.23, h * 0.2); //attacco interno
+		ctx.lineTo(k * w * 0.33, h * 0.09); //alto
+		ctx.closePath();
+		ctx.stroke();
+		//piede
+		ctx.beginPath();
+		ctx.fillStyle = textureEnabled ? col : '#000';
+		ctx.fillRect(k * w * 0.5, h * 0.5, -k * w * 0.10, -h * 0.02);
+		ctx.strokeRect(k * w * 0.5, h * 0.5, -k * w * 0.10, -h * 0.02);
+	}
+
+	//zampetta centrale (rocco approved!)
+	function drawZampaCentrale(w, h, col, k) {
+		ctx.beginPath();
+		ctx.strokeStyle = textureEnabled ? col : COLORS[currentColor];
+		ctx.moveTo(k * w * 0.08, h * 0.20);
 		ctx.lineTo(0, h * 0.3);
 		ctx.lineTo(0, h * 0.47);
 		ctx.lineTo(0, h * 0.3);
-		ctx.lineTo(w * 0.08, h * 0.20);
+		ctx.lineTo(-k * w * 0.08, h * 0.20);
 		ctx.stroke();
 
 		ctx.beginPath();
-		ctx.strokeStyle = textureEnabled ? golden : COLORS[currentColor];
-		ctx.moveTo(w * 0.08, h * 0.20);
+		ctx.moveTo(k * w * 0.08, h * 0.20);
 		ctx.lineTo(0, h * 0.05); //centro
-		ctx.lineTo(-w * 0.08, h * 0.20);
+		ctx.lineTo(-k * w * 0.08, h * 0.20);
 		ctx.lineTo(0, h * 0.05);
 		ctx.lineTo(0, h * 0.47);
 		ctx.stroke();
 
 		//piede cx
 		ctx.beginPath();
-		ctx.strokeStyle = textureEnabled ? golden : COLORS[currentColor];
-		ctx.fillStyle = textureEnabled ? golden : '#000';
-		ctx.fillRect(-w * 0.05, h * 0.5, w * 0.1, -h * 0.02);
-		ctx.strokeRect(-w * 0.05, h * 0.5, w * 0.1, -h * 0.02);
-
-		ctx.restore();
+		ctx.strokeStyle = textureEnabled ? col : COLORS[currentColor];
+		ctx.fillStyle = textureEnabled ? col : '#000';
+		ctx.fillRect(k * w * 0.05, h * 0.5, -k * w * 0.1, -h * 0.02);
+		ctx.strokeRect(k * w * 0.05, h * 0.5, -k * w * 0.1, -h * 0.02);
 	}
 
 	//god bless america!
 	function drawUSFlag(x, y, fw, dir) {
-		if (!textureEnabled) return;
-		const fh = fw * 0.5; // rapporto 1/2
+		const fh = fw * 0.5; //rapporto 1/2
 
 		//sfondo bianco
 		ctx.fillStyle = textureEnabled ? '#fff' : COLORS[currentColor];
@@ -1344,12 +1335,8 @@
 		}
 	}
 	
-	//usato da stats
-	function n(x) { if(x === undefined || x === null) return ''; return x >= 0 ? x.toFixed(2).padStart(7, ' '): x.toFixed(2).padStart(7, ' '); }
-
 	//dove sono atterrato
 	function drawPlantedFlags() {
-		if (!textureEnabled) return;
 		ctx.save();
 		ctx.scale(myCam.scale, myCam.scale);
 		ctx.translate(-myCam.position.x, -myCam.position.y);
@@ -1439,6 +1426,7 @@
 		}
 	}
 	
+	//cambia raggio e trasparenza
 	function updateRadioWaves(dt) {
 		for (let i = radioWaves.length - 1; i >= 0; i--) {
 			const w = radioWaves[i];
@@ -1448,6 +1436,7 @@
 		}
 	}
 	
+	//onde radio come archi (meno di 90')
 	function drawRadioWaves() {
 		for (const w of radioWaves) {
 			ctx.strokeStyle = COLORS_ALPHA[currentColor].replace('xxx', w.alpha * 0.5);
@@ -1458,8 +1447,10 @@
 		}
 	}
 
+	//usato da stats
+	function n(x) { if(x === undefined || x === null) return ''; return x >= 0 ? x.toFixed(2).padStart(7, ' '): x.toFixed(2).padStart(7, ' '); }
 
-	//statistiche in alto (erano in basso su Tranquility Base - TODO!)
+	//statistiche in alto (erano in basso su Tranquility Base - TODO?)
 	function drawStats() {
 		ctx.fillStyle = COLORS[currentColor];
 		ctx.font = '16px monospace';
