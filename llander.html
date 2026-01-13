@@ -124,11 +124,12 @@
 	let plantedFlags = [];//dove sono atterrato con successo, pianto una bandierina ammericana
 
 	//audio
-	const engineSound = new Audio('engine.mp3'); engineSound.loop = true; engineSound.preload = 'auto';
-	const explosionSound = new Audio('explosion.mp3'); explosionSound.loop = false; explosionSound.preload = 'auto';
-	const landedSound = new Audio('landed.mp3'); landedSound.loop = false; landedSound.preload = 'auto';
-	const windSound = new Audio('wind.mp3'); windSound.loop = true; windSound.preload = 'auto';
-	const airSound = new Audio('air.mp3'); airSound.loop = false; airSound.preload = 'auto';
+	const engineSound = new Audio('engine.mp3'); engineSound.loop = true; engineSound.preload = 'auto';//fiammone
+	const explosionSound = new Audio('explosion.mp3'); explosionSound.loop = false; explosionSound.preload = 'auto';//kaboom
+	const landedSound = new Audio('landed.mp3'); landedSound.loop = false; landedSound.preload = 'auto';//armstrong
+	const windSound = new Audio('wind.mp3'); windSound.loop = true; windSound.preload = 'auto';//vento
+	const airSound = new Audio('air.mp3'); airSound.loop = false; airSound.preload = 'auto';//ppssssttt
+	
 	//messaggi (start...end, velocita testo, posizione e chi lo dice (0=capcom, 1=armstrong)
 	const landingMessages = [
 		{ text: "We copy you down Eagle", start: 0, end: 5000, delay: 50, dy: -48, src: 0 },
@@ -141,35 +142,39 @@
 	];
 	let radioWaves = [];//a noi ci piacciono un sacco gli effetti speciali ;)
 
+	//fps per delfini curiosi e cavalli golosi...
+	let isFps = false;
+	let fps = 0;
+	let fpsFrames = 0;
+	let fpsTime = 0;
+	let useRects = false;//particelle squadrate o tonde
+	let useHitbox = false;//hitbox attorno alla navetta
+
 
 	//real ship
 	const shipImg = new Image();
 	shipImg.src = 'llander.png';
-	let shipImgReady = false;
 	shipImg.onload = () => {
-		shipImgReady = true;
+		shipImg.ready = true;
 	};
 	//real earth
 	const earthImg = new Image();
 	earthImg.src = 'earth.png';
-	let earthImgReady = false;
 	earthImg.onload = () => {
-		earthImgReady = true;
+		earthImg.ready = true;
 	};
 	//mountains parallax
 	const mountainsImg = new Image();
 	mountainsImg.src = 'mountains.png';
-	let mountainsImgReady = false;
 	mountainsImg.onload = () => {
-		mountainsImgReady = true;
+		mountainsImg.ready = true;
 	};
 	//terrain texture
 	const terrainImg = new Image();
 	terrainImg.src = 'terrain.jpg';
-	let terrainImgReady = false;
 	let terrainPattern = null;
 	terrainImg.onload = () => {
-		terrainImgReady = true;
+		terrainImg.ready = true;
 		terrainPattern = ctx.createPattern(terrainImg, 'repeat');
 	};
 
@@ -213,11 +218,17 @@
 			const r = rnd(1, 3);
 			ctx.fillStyle = colors[Math.floor(rnd(0, colors.length))];
 			ctx.strokeStyle = colors[Math.floor(rnd(0, colors.length))];
-			ctx.beginPath();
-			ctx.arc(x, y, r, 0, Math.PI * 2);
-			ctx.closePath();
-			if (i % 4 === 0) ctx.stroke();
-			else ctx.fill();
+			
+			if (useRects) {
+				if (i % 4 === 0) ctx.strokeRect(x, y, r, r);
+				else ctx.fillRect(x, y, r, r);
+			} else {
+				ctx.beginPath();
+				ctx.arc(x, y, r, 0, Math.PI * 2);
+				ctx.closePath();
+				if (i % 4 === 0) ctx.stroke();
+				else ctx.fill();
+			}			
 		}
 
 		return ctx.createPattern(c, 'repeat');
@@ -327,12 +338,14 @@
 
 	//controlli input
 	document.addEventListener('keydown', e => {
-		//console.log(e.key);
 		if (!keyList.includes(e.key)) keyList.push(e.key);
 		if (e.key === 'r' || e.key === 'R') { resetGame(); }
 		if (e.key === 'c' || e.key === 'C') { currentColor = (currentColor + 1) % COLORS.length; }
 		if (e.key === 't' || e.key === 'T') { textureEnabled = (textureEnabled + 1) % 3; }
 		if (e.key === 'g' || e.key === 'G') { godMode = !godMode; }
+		if (e.key === 'f' || e.key === 'F') { isFps = !isFps; }
+		if (e.key === 'u' || e.key === 'U') { useRects = !useRects; }
+		if (e.key === 'h' || e.key === 'H') { useHitbox = !useHitbox; }
 		if (e.key === 'w' || e.key === 'W') { 
 			windEnabled = !windEnabled; 
 			if (windEnabled) { windSpeed = rnd(-MAX_WIND_SPEED, MAX_WIND_SPEED); windSound.play(); }
@@ -385,17 +398,22 @@
 	});
 
 	//resize
-	window.addEventListener('resize', () => {
-		vpW = window.innerWidth;
-		vpH = window.innerHeight;
-		canvas.width = vpW;
-		canvas.height = vpH;
-	});
-
+	window.addEventListener('resize', resize);
+	
+	function resize() {
+		if (vpW !== window.innerWidth || vpH !== window.innerHeight) {
+			vpW = window.innerWidth;
+			vpH = window.innerHeight;
+			canvas.width = vpW;
+			canvas.height = vpH;
+		}
+	}
+	
 	//reset
 	function resetGame() {
-		ship.fuel = 999;
 		startTime = Date.now();
+		//stato navetta
+		ship.fuel = 999;
 		ship.position = new Point(vpW / 2, shipSize);
 		ship.speed = new Point(0, 0);
 		ship.angle = 0;
@@ -403,11 +421,21 @@
 		ship.landed = false;
 		ship.canTakeOff = false;
 		ship.landedAt = 0;
+		
+		//suono
+		engineSound.pause();
+		explosionSound.pause();
+		landedSound.pause();
+		//windSound.pause();//no!
+		airSound.pause();
+		
+		//altro
 		shipPieces = []; //kaboom
 		shipSmoke = []; //nuvoletta
 		myCam = { position: new Point(0, 0), scale: 1 };
 		mainTerrain = { vertices: [], landingPlaces: [] }; //terreno vuoto
 		//bgTerrain = { vertices:[], landingPlaces:[] }; //terreno vuoto
+		
 		createStars();
 		rockTexture = generateRockTexture();
 		windSpeed = windEnabled ? rnd(-MAX_WIND_SPEED, MAX_WIND_SPEED) : 0;//px/sec
@@ -451,7 +479,7 @@
 	}
 
 	//movimento navetta
-	function moveShip(dt) {
+	function updateShip(dt) {
 		if (!ship.alive) return;
 		
 		//consumo fuel
@@ -537,12 +565,16 @@
 			} //BL
 		];
 	}
-
+	
+	//intersezione counter clockwise: 
 	function segmentsIntersect(a, b, c, d) {
 		function ccw(p1, p2, p3) {
+			//i punti p1 -> p2 -> p3 sono orientati in senso antiorario?
+			//true se p3 sta a sinistra del vettore p1->p2
 			return (p3.y - p1.y) * (p2.x - p1.x) > (p2.y - p1.y) * (p3.x - p1.x);
 		}
 		return (
+			//A e B stanno da lati opposti rispetto alla linea CD && C e D stanno da lati opposti rispetto alla linea AB -> si intersecano
 			ccw(a, c, d) !== ccw(b, c, d) &&
 			ccw(a, b, c) !== ccw(a, b, d));
 	}
@@ -562,7 +594,7 @@
 			}
 		}
 
-		const box = getShipOBB();
+		const box = getShipOBB();//oriented bounding box della nave
 
 		//lati della hitbox
 		const edges = [
@@ -575,16 +607,24 @@
 		const vy = ship.speed.y / METERS_TO_PIXELS;
 		const vx = Math.abs(ship.speed.x / METERS_TO_PIXELS);
 
+		//ottimizzazione
+		const minX = ship.position.x - ship.size.width;
+		const maxX = ship.position.x + ship.size.width;
+
 		//piattaforme di landing
 		for (const ll of mainTerrain.landingPlaces) {
 			const A = ll.pointA;
 			const B = ll.pointB;
+			
+			//inutile controllare landing lontane dalla navetta
+			if (B.x < minX || A.x > maxX) continue;
+			
 			//centro della landing line
 			const landingCenterX = (A.x + B.x) / 2;
 			const landingCenterY = (A.y + B.y) / 2;
 
 			const nearCenterX = Math.abs(landingCenterX - ship.position.x) < (ship.size.width / 3);
-			const nearCenterY = Math.abs(landingCenterY - (ship.position.y + ship.size.height / 2)) < 4;
+			const nearCenterY = Math.abs(landingCenterY - (ship.position.y + ship.size.height / 2)) < 4;//non proprio esatto ma come approssimazione va benone anche a navetta ruotata
 
 			for (const e of edges) {
 				if (segmentsIntersect(e[0], e[1], A, B)) {
@@ -608,7 +648,6 @@
 						if (!godMode)
 							explodeShip();
 						else {
-							ship.speed.x = 0;
 							ship.speed.y *= -1;
 							ship.position.y = getTerrainYAtX(ship.position.x) - ship.size.height;
 						}
@@ -622,13 +661,15 @@
 		for (let i = 1; i < mainTerrain.vertices.length; i++) {
 			const A = mainTerrain.vertices[i - 1];
 			const B = mainTerrain.vertices[i];
+			
+			//inutile controllare landing lontane dalla navetta
+			if (B.x < minX || A.x > maxX) continue;
 
 			for (const e of edges) {
 				if (segmentsIntersect(e[0], e[1], A, B)) {
 					if (!godMode)
 						explodeShip();
 					else {
-						ship.speed.x = 0;
 						ship.speed.y *= -1;
 						ship.position.y = getTerrainYAtX(ship.position.x) - ship.size.height;
 					}
@@ -664,7 +705,7 @@
 		}
 
 		//palle di fumo (max / 2)
-		for (let i = 0; i < MAX_SMOKE_PIECES / 2; i++) {
+		for (let i = 0; i < MAX_SMOKE_PIECES; i++) {
 			shipSmoke.push({
 				pos: new Point(ship.position.x, ship.position.y + ship.size.height / 2),
 				vel: new Point(rnd(-2 * METERS_TO_PIXELS, 2 * METERS_TO_PIXELS), rnd(-2 * METERS_TO_PIXELS, 0.2 * METERS_TO_PIXELS)), //-1,0 solo in alto
@@ -748,7 +789,7 @@
 				alpha: rnd(0, 1),
 				size: 0.1 + rnd(0, 2),
 				//oscillazione particelle
-				amp: 2 + rnd(0,4),
+				amp: 3 + rnd(0,4),
 				freq: 1.5 + rnd(0,1),
 				phase: rnd(0, 6.28),
 				baseY: py
@@ -762,10 +803,14 @@
 		for (const s of starsList) {
 			s.alpha = (s.alpha + 5) % 255;
 			ctx.fillStyle = COLORS_ALPHA[currentColor].replace('xxx', s.alpha / 255);
-			ctx.beginPath();
-			//ctx.arc(s.pos.x, s.pos.y, 1, 0, Math.PI * 2);
-			//ctx.fill();
-			ctx.fillRect(s.pos.x, s.pos.y, 1.5, 1.5);
+			
+			if (useRects) {
+				ctx.fillRect(s.pos.x, s.pos.y, 1.5, 1.5);
+			} else {
+				ctx.beginPath();
+				ctx.arc(s.pos.x, s.pos.y, 1, 0, Math.PI * 2);
+				ctx.fill();
+			}
 		}
 	}
 
@@ -821,16 +866,16 @@
 		//atmosfera
 		drawAtmos(x, y, r);
 
-		if (textureEnabled === 2 && earthImgReady) return drawRealEarth(x, y, r);
+		if (textureEnabled === 2 && earthImg.ready) return drawRealEarth(x, y, r);
 
 		//oceano
 		const ocean = ctx.createRadialGradient(x - r / 2, y - r / 2, 0, x, y, r);
-		ocean.addColorStop(0, '#4bf'); //blu
+		ocean.addColorStop(0, currentColor === 0 ? '#4bf' : COLORS_ALPHA[currentColor].replace('xxx','0.5')); //blu
 		ocean.addColorStop(1, '#003');
 
 		//terra
 		const green = ctx.createRadialGradient(x - r / 2, y - r / 2, 0, x, y, r);
-		green.addColorStop(0, '#2a3'); //verdone
+		green.addColorStop(0, currentColor === 0 ? '#2a3' : COLORS_ALPHA[currentColor].replace('xxx','0.8')); //verdone
 		green.addColorStop(1, '#030');
 
 		ctx.beginPath();
@@ -993,7 +1038,7 @@
 
 	//montagne lunari
 	function drawRealMountains() {
-		if (!textureEnabled || !mountainsImgReady) return;
+		if (!textureEnabled || !mountainsImg.ready) return;
 
 		let offsetX = (-myCam.position.x * 0.3) % mountainsImg.width; //veloce 1/3
 		if (offsetX < 0) offsetX += mountainsImg.width;
@@ -1046,10 +1091,11 @@
 
 		//FIAMMONE CLAMOROSO
 		drawClamorousFlame(w, h, 0.5);
-
+		
 		ctx.restore();
 	}
-
+	
+	
 	//ECCOLO IL FIAMMONE CLAMOROSO!
 	function drawClamorousFlame(w, h, deltaY) {
 		if (ship.fuel > 0) {
@@ -1061,8 +1107,9 @@
 					0, h * 0.25, flameLen); //x1, y1, r1
 			if (textureEnabled) {
 				grad.addColorStop(0, 'rgba(255,255,255,0.8)');
-				grad.addColorStop(0.5, 'rgba(255,200,50,0.8)');
-				grad.addColorStop(0.66, 'rgba(255,0,0,0.8)');
+				grad.addColorStop(0.25, 'rgba(255,255,255,0.8)');//nucleo bianco
+				grad.addColorStop(0.35, 'rgba(255,200,50,0.8)');
+				grad.addColorStop(0.45, 'rgba(255,0,0,0.8)');
 				grad.addColorStop(1, 'rgba(255,0,0,0)');
 			} else {
 				grad.addColorStop(0, COLORS_ALPHA[currentColor].replace('xxx', '0.8'));
@@ -1083,11 +1130,11 @@
 			ctx.closePath();
 			ctx.fill();
 			//bordo fiamma?
-			ctx.strokeStyle = textureEnabled ? 'rgba(128,0,0,0.2)' : COLORS_ALPHA[currentColor].replace('xxx', '0.2');
+			ctx.strokeStyle = textureEnabled ? 'rgba(128,0,0,0.25)' : COLORS_ALPHA[currentColor].replace('xxx', '0.25');
 			ctx.stroke();
 
 			//se sto a manetta
-			if (ship.thrust > 0) {//keyList.includes('ArrowUp')) {
+			if (ship.thrust > 0) {
 				//... e sto vicino al terreno
 				let terrainY = getTerrainYAtX(ship.position.x);
 				let isNearTerrain = (terrainY - ship.position.y - ship.size.height / 2) < ship.size.height;
@@ -1095,17 +1142,27 @@
 				if (isNearTerrain) {
 					//tolgo le ultime palle di fumo
 					if(shipSmoke.length > MAX_SMOKE_PIECES) shipSmoke.splice(0, shipSmoke.length - MAX_SMOKE_PIECES);
-					//aggiungo nuove palle di fumo
-					for (let i = -1; i <= 1; i++) {
-						if (rnd(0,1) > ship.thrust) continue;//meno palle se poca manetta
-						//aggiunto angolo alla posizione per spostare fumo quando nave inclinata
-						let spostamentoFumo = Math.max(ship.angle + 400, 400) - 400; //angolo negativo: -10 -> 390 -> -10, angolo positivo: 10 -> 410 -> 10
-						spostamentoFumo = Math.min(spostamentoFumo + 400, 450) - 400; //limito al max 50 pixel
+					
+					//punto di uscita del motore in coordinate locali e': x=0, y=ship.size.height
+					const localEngine = { x: 0, y: ship.size.height };
+					const sin = Math.sin(degToRad(ship.angle));//rotazione
+					const engineWorldX = ship.position.x - ship.size.height * sin;
+					
+					//aggiungo nuove palle di fumo, di piu se a manetta
+					const smokeDensity = ship.thrust * 3;
+					const smokeSpeed = ship.thrust * 1.5;
+					for (let i = 0; i < smokeDensity; i++) {
 						shipSmoke.push({
-							pos: new Point(ship.position.x - i * ship.size.width / 4 - spostamentoFumo, terrainY),
-							vel: new Point(rnd(-1 * ship.thrust * METERS_TO_PIXELS, 1 * ship.thrust * METERS_TO_PIXELS), rnd(-0.1 * METERS_TO_PIXELS, 0.1 * METERS_TO_PIXELS)),
-							alpha: 0.1 + rnd(0,2),
-							size: rnd(0, 3)
+							pos: new Point(
+								engineWorldX + rnd(-ship.size.width / 4, ship.size.width / 4),
+								terrainY
+							),
+							vel: new Point(
+								rnd(-smokeSpeed, smokeSpeed) * METERS_TO_PIXELS,
+								rnd(-0.2, 0.05) * METERS_TO_PIXELS
+							),
+							alpha: 0.1 + rnd(0, 2),
+							size: rnd(0, 2)
 						});
 					}
 				}
@@ -1117,7 +1174,7 @@
 	function drawShip() {
 		if (!ship.alive) return; //non disegnare se distrutta
 		
-		if (textureEnabled === 2 && shipImgReady) return drawRealShip();
+		if (textureEnabled === 2 && shipImg.ready) return drawRealShip();
 
 		const centerX = (ship.position.x - myCam.position.x) * myCam.scale;
 		const centerY = (ship.position.y - myCam.position.y) * myCam.scale;
@@ -1132,8 +1189,10 @@
 		ctx.lineWidth = 1;
 
 		//hitbox
-		//ctx.strokeStyle = 'red';
-		//ctx.strokeRect( -ship.size.width / 2, -ship.size.height / 2, ship.size.width, ship.size.height );
+		if (useHitbox) {
+			ctx.strokeStyle = COLORS_ALPHA[currentColor].replace('xxx','0.25');
+			ctx.strokeRect( -ship.size.width / 2, -ship.size.height / 2, ship.size.width, ship.size.height );
+		}
 
 		let golden = '#f80'; //'#ccc';
 
@@ -1239,11 +1298,11 @@
 		ctx.strokeStyle = textureEnabled ? col : COLORS[currentColor];
 		ctx.beginPath();
 		ctx.moveTo(k * w * 0.22, 0); //attacco alto
-		ctx.lineTo(k * w * 0.33, h * 0.09); //alto
+		ctx.lineTo(k * w * 0.33, h * 0.05); //alto
 		ctx.lineTo(k * w * 0.45, h * 0.47); //centro piede
 		ctx.lineTo(k * w * 0.39, h * 0.3); //medio
 		ctx.lineTo(k * w * 0.23, h * 0.2); //attacco interno
-		ctx.lineTo(k * w * 0.33, h * 0.09); //alto
+		ctx.lineTo(k * w * 0.33, h * 0.05); //alto
 		ctx.closePath();
 		ctx.stroke();
 		//piede
@@ -1346,13 +1405,21 @@
 		ctx.lineWidth = 1 / myCam.scale;
 		for (const s of shipSmoke) {
 			ctx.strokeStyle = COLORS_ALPHA[currentColor].replace('xxx', s.alpha);
-			ctx.beginPath();
-			ctx.arc((s.pos.x - myCam.position.x) * myCam.scale, (s.pos.y - myCam.position.y) * myCam.scale, s.size * myCam.scale, 0, Math.PI * 2);
-			if (textureEnabled) {
-				ctx.fillStyle = COLORS_ALPHA[currentColor].replace('xxx', s.alpha / 2);
-				ctx.fill();
+			if (useRects) {
+				if (textureEnabled) {
+					ctx.fillStyle = COLORS_ALPHA[currentColor].replace('xxx', s.alpha / 2);
+					ctx.fillRect((s.pos.x - myCam.position.x) * myCam.scale, (s.pos.y - myCam.position.y) * myCam.scale, s.size * myCam.scale, s.size * myCam.scale);
+				}
+				ctx.strokeRect((s.pos.x - myCam.position.x) * myCam.scale, (s.pos.y - myCam.position.y) * myCam.scale, s.size * myCam.scale, s.size * myCam.scale);
+			} else {
+				ctx.beginPath();
+				ctx.arc((s.pos.x - myCam.position.x) * myCam.scale, (s.pos.y - myCam.position.y) * myCam.scale, s.size * myCam.scale, 0, Math.PI * 2);
+				if (textureEnabled) {
+					ctx.fillStyle = COLORS_ALPHA[currentColor].replace('xxx', s.alpha / 2);
+					ctx.fill();
+				}
+				ctx.stroke();
 			}
-			ctx.stroke(); ;
 		}
 		
 		//disegno il vento
@@ -1361,13 +1428,21 @@
 		ctx.lineWidth = 1 / myCam.scale;
 		for (const s of windParticles) {
 			ctx.strokeStyle = COLORS_ALPHA[currentColor].replace('xxx', s.alpha);
-			ctx.beginPath();
-			ctx.arc((s.pos.x - myCam.position.x) * myCam.scale, (s.pos.y - myCam.position.y) * myCam.scale, s.size * myCam.scale, 0, Math.PI * 2);
-			if (textureEnabled) {
-				ctx.fillStyle = COLORS_ALPHA[currentColor].replace('xxx', s.alpha / 2);
-				ctx.fill();
+			if (useRects) {
+				if(textureEnabled) {
+					ctx.fillStyle = COLORS_ALPHA[currentColor].replace('xxx', s.alpha / 2);
+					ctx.fillRect((s.pos.x - myCam.position.x) * myCam.scale, (s.pos.y - myCam.position.y) * myCam.scale, s.size * myCam.scale, s.size * myCam.scale);
+				}
+				ctx.strokeRect((s.pos.x - myCam.position.x) * myCam.scale, (s.pos.y - myCam.position.y) * myCam.scale, s.size * myCam.scale, s.size * myCam.scale);
+			} else {
+				ctx.beginPath();
+				ctx.arc((s.pos.x - myCam.position.x) * myCam.scale, (s.pos.y - myCam.position.y) * myCam.scale, s.size * myCam.scale, 0, Math.PI * 2);
+				if (textureEnabled) {
+					ctx.fillStyle = COLORS_ALPHA[currentColor].replace('xxx', s.alpha / 2);
+					ctx.fill();
+				}
+				ctx.stroke();
 			}
-			ctx.stroke();
 		}
 	}
 	
@@ -1487,7 +1562,7 @@
 	function n(x) { if(x === undefined || x === null) return ''; return x >= 0 ? x.toFixed(2).padStart(7, ' '): x.toFixed(2).padStart(7, ' '); }
 
 	//statistiche in alto (erano in basso su Tranquility Base - TODO?)
-	function drawStats() {
+	function drawStats(dt) {
 		ctx.fillStyle = COLORS[currentColor];
 		ctx.font = '16px monospace';
 		ctx.textAlign = 'left';
@@ -1507,44 +1582,56 @@
 		ctx.fillText(`VY:   ${n(ship.speed.y / METERS_TO_PIXELS)} M/S`, x3, 32);
 		ctx.fillText(`WIND: ${n(windSpeed)} M/S`, x3, 48);
 
-		ctx.fillText(`Lunar Lander / Tranquility Base - Apple ][ clone`, x1, vpH - 16);
-		ctx.fillText(`[p]ause - [r]eset - [${currentColor ? 'C' : 'c'}]olor - [${textureEnabled ? 'T' : 't'}]exture - [${scanLinesEnabled ? 'X' : 'x'}]canlines - [${godMode ? 'G' : 'g'}]odMode - [${windEnabled ? 'W' : 'w'}]ind toggle`, vpW - 720, vpH - 16);
+		ctx.fillText(`Lunar Lander / Tranquility Base - Apple ][ clone`, x1, vpH - 20);
+		ctx.fillText(`[${paused ? 'P' : 'p'}]ause - [r]eset - [${currentColor ? 'C' : 'c'}]olor - [${textureEnabled ? 'T' : 't'}]exture - [${scanLinesEnabled ? 'X' : 'x'}]canlines - [${godMode ? 'G' : 'g'}]odMode - [${windEnabled ? 'W' : 'w'}]ind - [${useRects ? 'U' : 'u'}]seRects - [${isFps ? 'F' : 'f'}]ps - [${useHitbox ? 'H' : 'h'}]itBox toggle`, x1, vpH - 4);
+		
+		//fps
+		if (isFps) {
+			//calcolo
+			fpsFrames++;
+			fpsTime += dt;
+			if (fpsTime >= 1) {
+				fps = Math.round(fpsFrames / fpsTime);
+				fpsFrames = 0;
+				fpsTime = 0;				
+			}
+			ctx.fillText(`FPS: ${fps}`, vpW - 64, vpH - 4);
+		}
 	}
 
 
 	//update loop
 	function update(now) {
 		const dt = Math.min((now - lastTime) / 1000, 0.033);//secondi
-		lastTime = now;
 
 		if (!paused) {
-			ctx.fillStyle = 'black';
-			ctx.fillRect(0, 0, vpW, vpH);
-
-			moveShip(dt);
+			updateShip(dt);
 			checkCollision();
 			//updateTerrain(bgTerrain, false);
 			updateTerrain(mainTerrain, true);
 			updateCamera();
-			
-			drawStars();
-			drawRealMountains();
-			drawEarth();
-			drawRadioWaves();
-			
-			//drawTerrain(bgTerrain, 0.3);
-			drawTerrain(mainTerrain, 1);
-			drawShip();
-			drawPlantedFlags();
-			drawLandingText();
-			
 			updateParticles(dt);
 			updateRadioWaves(dt);
-			drawParticles();
-			
-			drawStats();
 		}
-
+		
+		ctx.fillStyle = 'black';
+		ctx.fillRect(0, 0, vpW, vpH);
+			
+		drawStars();
+		drawRealMountains();
+		drawEarth();
+		drawRadioWaves();
+		
+		//drawTerrain(bgTerrain, 0.3);
+		drawTerrain(mainTerrain, 1);
+		drawShip();
+		drawPlantedFlags();
+		drawLandingText();
+		drawParticles();
+		drawStats(dt);
+		
+		lastTime = now;
+		
 		requestAnimationFrame(update);
 	}
 
