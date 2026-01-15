@@ -1,0 +1,207 @@
+<html>
+<body>
+<canvas id="fire" width="600" height="600"></canvas>
+<script>
+const canvas = document.getElementById("fire");
+const ctx = canvas.getContext("2d");
+
+let cx = canvas.width / 2;
+let cy = canvas.height / 2;
+
+const particles = [];
+const MAX_PARTICLES = 300;
+const PARTICLE_SIZE = 20;//max dimensione particella in m
+
+const GRAVITY_ROCKS = 9.81;//in basso, m/s2
+const GRAVITY_FLAMES = -4.81;//in alto, m/s2
+const wind = 5;//spinta random (m/s2)
+
+
+const METERS_TO_PIXELS = 10;//1 m = 10px
+const PIXELS_TO_METERS = 1/10;//1px = 0.1 m
+
+let realFlame = true;
+
+canvas.addEventListener("click", (e) => {
+    const rect = canvas.getBoundingClientRect();
+    cx = e.clientX - rect.left;
+    cy = e.clientY - rect.top;
+	realFlame = !realFlame;
+});
+
+function rnd(min, max) {
+  return Math.random() * (max - min) + min;
+}
+
+function redColor(heat) {
+  if (heat > 0.8) return `250,250,250`;
+  if (heat > 0.6) return `250,200, 50`;
+  if (heat > 0.4) return `250,150,  0`;
+			      return `150, 50,  0`;
+}
+
+function blueColor(heat) {
+  if (heat > 0.8) return `250,250,250`;
+  if (heat > 0.6) return ` 50,200,250`;
+  if (heat > 0.4) return `  0,150,250`;
+				  return `  0, 50,150`;
+}
+
+function fireColor(heat, red, blue) {
+    if (heat > 0.8) return `250,250,250`;
+
+    const r = red ? (150 + 50 * heat) : 0;
+    const g = 50 + 150 * heat;
+    const b = blue ? (150 + 50 * heat) : 0;
+
+    return `${r|0},${g|0},${b|0}`;
+}
+
+
+//crea particelle vicino cx/cy
+function spawnRockParticle() {
+	//schizzo pesante
+	particles.push({
+		x: cx * PIXELS_TO_METERS + rnd(-PARTICLE_SIZE / 2, PARTICLE_SIZE / 2) * PIXELS_TO_METERS,//spostato orizzontale
+		y: cy * PIXELS_TO_METERS + rnd(-PARTICLE_SIZE / 8, PARTICLE_SIZE / 8) * PIXELS_TO_METERS,//poco spostato verticale
+		vx: rnd(-20, 20),//orizzontali m/s
+		vy: rnd(-20, 0),//in alto m/s
+		life: 1,
+		size: rnd(0, PARTICLE_SIZE / 4) * PIXELS_TO_METERS,//piu piccoli in m
+		heat: rnd(0.3, 0.8),//piu freddi
+		hasWeight: true
+	});
+}
+function spawnFlameParticle() {
+	//fiamma
+	particles.push({
+		x: cx * PIXELS_TO_METERS + rnd(-PARTICLE_SIZE / 4, PARTICLE_SIZE / 4) * PIXELS_TO_METERS,//molto verso il centro
+		y: cy * PIXELS_TO_METERS + rnd(-PARTICLE_SIZE / 4, PARTICLE_SIZE / 4) * PIXELS_TO_METERS,//spostato verticale
+		vx: rnd(-1, 1),//quasi solo verticali, m/s
+		vy: rnd(-10, 0),//in alto m/s
+		life: 1,
+		size: rnd(0, PARTICLE_SIZE) * PIXELS_TO_METERS,//piu grandi in m
+		heat: rnd(0.5, 1),//piu caldi
+		hasWeight: false
+	});
+}
+
+//aggiorna particelle
+function updateParticles(dt) {
+	for (let i = particles.length - 1; i >= 0; i--) {
+		const p = particles[i];
+		
+		p.vx += rnd(-wind, wind) * dt;
+		p.vy += (p.hasWeight ? GRAVITY_ROCKS : GRAVITY_FLAMES) * dt;
+		p.x += p.vx * dt;
+		p.y += p.vy * dt;
+		p.life -= (p.hasWeight ? 0.25 : 0.5) * dt;//diminuzione vita minore per le rocce
+		p.heat -= (p.hasWeight ? 0.95 : 2) * dt;//diminuzione heat minore per le rocce
+		p.heat = Math.max(0, p.heat);
+		p.size *= Math.pow(0.99, dt * 60);
+
+		if (p.life <= 0 || p.size <= 0 || p.y <= 0 || p.y >= canvas.height * PIXELS_TO_METERS) {
+			particles.splice(i, 1);
+			continue;
+		}
+	}
+}
+
+function drawParticles() {
+	for (let i = particles.length - 1; i >= 0; i--) {
+		const p = particles[i];
+		
+		const r = p.size * METERS_TO_PIXELS;
+		const px = p.x * METERS_TO_PIXELS;
+		const py = p.y * METERS_TO_PIXELS;
+		
+		const gradient = ctx.createRadialGradient(
+			px, py, 0,
+			px, py, r
+		);
+		//const color = blueColor(p.heat);
+		//const color = redColor(p.heat);
+		//const color = fireColor(p.heat, 1, 0);
+		const color = fireColor(p.heat, 1, 0);
+		
+		gradient.addColorStop(0, `rgba(${color},${p.life})`);
+		gradient.addColorStop(0.5, `rgba(${color},${p.life})`);
+		gradient.addColorStop(1, `rgba(${color},0)`);
+		
+		//palla di fuoco
+		ctx.fillStyle = gradient;
+		ctx.beginPath();
+		ctx.arc(px, py, r, 0, Math.PI * 2);
+		ctx.fill();
+		
+		if (p.hasWeight) {
+			//filo verso il centro
+			const sx = cx + (px - cx) * 0.95;
+			const sy = cy + (py - cy) * 0.95;
+			ctx.beginPath();
+			ctx.strokeStyle = `rgba(${color},${p.life / 5})`;
+			ctx.moveTo(px, py);
+			ctx.lineTo(sx, sy);
+			ctx.stroke();
+		}
+	}
+}
+
+function n(x) { if(x === undefined || x === null) return ''; return x >= 0 ? x.toFixed(2).padStart(7, ' '): x.toFixed(2).padStart(7, ' '); }
+
+function drawStats(dt) {
+	ctx.fillStyle = '#fff';
+	ctx.fillText('particles='+particles.length, 10, 10);
+	ctx.fillText('cx='+cx+' cy='+cy, 10, 20);
+	ctx.fillText('dt='+((dt*1000)|0)/1000, 10, 30);
+	try{
+		ctx.fillText('particle[0] life='+n(particles[0].life)+' heat='+n(particles[0].heat), 10, 40);
+		ctx.fillText('particle[1] life='+n(particles[1].life)+' heat='+n(particles[1].heat), 10, 50);
+		let countRocks = 0;
+		let countFlames = 0;
+		for (let i = particles.length - 1; i >= 0; i--) {
+			if (particles[i].hasWeight) countRocks++;
+			else countFlames++;
+		}
+		ctx.fillText('rocks='+n(countRocks)+' flames='+n(countFlames), 10, 60);
+	} catch(e){}
+}
+
+let lastTime = performance.now();
+
+function update() {
+    const now = performance.now();
+    const dt = (now - lastTime) / 1000;//delta in secondi
+    lastTime = now;
+	
+	if (particles.length < MAX_PARTICLES) {
+		spawnFlameParticle();
+		spawnRockParticle();
+	}
+	
+	updateParticles(dt);
+	
+	if (realFlame) {
+		//il trucco della fiamma realistica e' tutto qui
+		ctx.globalCompositeOperation = "source-over";
+		ctx.fillStyle = "rgba(0,0,0,0.15)";//non cancella del tutto le particelle dei frame precedenti -> dissolvile appena
+		ctx.fillRect(0, 0, canvas.width, canvas.height);
+		ctx.globalCompositeOperation = "lighter";//quando le particelle si sovrappongono -> bianco!
+	} else {
+		ctx.globalCompositeOperation = "source-over";
+		ctx.fillStyle = "#000";
+		ctx.fillRect(0, 0, canvas.width, canvas.height);
+	}
+	
+	drawParticles();
+	
+	drawStats(dt);
+	
+	requestAnimationFrame(update);
+}
+
+update();
+
+</script>
+</body>
+</html>
