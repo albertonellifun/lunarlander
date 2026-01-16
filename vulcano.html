@@ -1,6 +1,22 @@
 <html>
+<head>
+<style>
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: black;
+}
+
+canvas {
+  display: block;
+}
+</style>
+</head>
 <body>
-<canvas id="fire" width="600" height="600"></canvas>
+<canvas id="fire"></canvas>
 <script>
 const canvas = document.getElementById("fire");
 const ctx = canvas.getContext("2d");
@@ -8,9 +24,11 @@ const ctx = canvas.getContext("2d");
 let cx = canvas.width / 2;
 let cy = canvas.height / 2;
 
-const particles = [];
-const MAX_PARTICLES = 300;
+let particles = [];
+const MAX_PARTICLES = 400;
 const PARTICLE_SIZE = 20;//max dimensione particella in m
+let currentParticleIndex = 0;
+particles = new Array(MAX_PARTICLES);
 
 const GRAVITY_ROCKS = 9.81;//in basso, m/s2
 const GRAVITY_FLAMES = -4.81;//in alto, m/s2
@@ -21,13 +39,47 @@ const METERS_TO_PIXELS = 10;//1 m = 10px
 const PIXELS_TO_METERS = 1/10;//1px = 0.1 m
 
 let realFlame = true;
+let flameColor = 3;//0=green, 1=viola, 2=blu, 3=red, 4=blu
+
+let paused = false;//PAUSA!
+
+function resizeCanvas() {
+  const dpr = window.devicePixelRatio || 1;
+
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+
+  canvas.width  = Math.floor(w * dpr);
+  canvas.height = Math.floor(h * dpr);
+
+  canvas.style.width  = w + "px";
+  canvas.style.height = h + "px";
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  // centro del vulcano al centro dello schermo
+  cx = w / 2;
+  cy = h / 2;
+}
+
+window.addEventListener("resize", resizeCanvas);
+
+resizeCanvas();
 
 canvas.addEventListener("click", (e) => {
     const rect = canvas.getBoundingClientRect();
     cx = e.clientX - rect.left;
     cy = e.clientY - rect.top;
 	realFlame = !realFlame;
+	flameColor = (flameColor + 1) % 5;
 });
+
+window.addEventListener("keydown", (e) => {
+  if (e.key === "p" || e.key === "P") {
+    paused = !paused;
+  }
+});
+
 
 function rnd(min, max) {
   return Math.random() * (max - min) + min;
@@ -59,37 +111,35 @@ function fireColor(heat, red, blue) {
 
 
 //crea particelle vicino cx/cy
-function spawnRockParticle() {
-	//schizzo pesante
-	particles.push({
-		x: cx * PIXELS_TO_METERS + rnd(-PARTICLE_SIZE / 2, PARTICLE_SIZE / 2) * PIXELS_TO_METERS,//spostato orizzontale
-		y: cy * PIXELS_TO_METERS + rnd(-PARTICLE_SIZE / 8, PARTICLE_SIZE / 8) * PIXELS_TO_METERS,//poco spostato verticale
-		vx: rnd(-20, 20),//orizzontali m/s
-		vy: rnd(-20, 0),//in alto m/s
-		life: 1,
-		size: rnd(0, PARTICLE_SIZE / 4) * PIXELS_TO_METERS,//piu piccoli in m
-		heat: rnd(0.3, 0.8),//piu freddi
-		hasWeight: true
-	});
+function spawnParticle(isRock) {
+	let p = particles[currentParticleIndex];
+	if (!p) {
+		p = {};
+		particles[currentParticleIndex] = p;
+	}
+	generateParticleAttributes(p, isRock);
+	currentParticleIndex = (currentParticleIndex + 1) % MAX_PARTICLES;
 }
-function spawnFlameParticle() {
-	//fiamma
-	particles.push({
-		x: cx * PIXELS_TO_METERS + rnd(-PARTICLE_SIZE / 4, PARTICLE_SIZE / 4) * PIXELS_TO_METERS,//molto verso il centro
-		y: cy * PIXELS_TO_METERS + rnd(-PARTICLE_SIZE / 4, PARTICLE_SIZE / 4) * PIXELS_TO_METERS,//spostato verticale
-		vx: rnd(-1, 1),//quasi solo verticali, m/s
-		vy: rnd(-10, 0),//in alto m/s
-		life: 1,
-		size: rnd(0, PARTICLE_SIZE) * PIXELS_TO_METERS,//piu grandi in m
-		heat: rnd(0.5, 1),//piu caldi
-		hasWeight: false
-	});
+
+function generateParticleAttributes(p, isRock) {
+  p.x = cx * PIXELS_TO_METERS + rnd(-PARTICLE_SIZE / 4, PARTICLE_SIZE / 4) * PIXELS_TO_METERS;//spostato orizzontale
+  p.y = cy * PIXELS_TO_METERS + rnd(-PARTICLE_SIZE / 4, PARTICLE_SIZE / 4) * PIXELS_TO_METERS;//poco spostato verticale
+  p.vx = isRock ? rnd(-20, 20) : rnd(-1, 1);//rocce sparate a 20 m/s, fiamme praticamente ferme
+  p.vy = isRock ? rnd(-20, 0) : rnd(-10, 0);//rocce sparate in alto a 20 m/s, fiamme al max 10 m/s
+  p.life = 1;
+  p.size = rnd(0, isRock ? PARTICLE_SIZE / 4 : PARTICLE_SIZE) * PIXELS_TO_METERS;//rocce piccole, fiamme grandi - in metri
+  p.heat = isRock ? rnd(0.3, 0.8) : rnd(0.5, 1);//rocce fredde, fiamme calde
+  p.hasWeight = isRock;
+  p.alive = true;
 }
+
 
 //aggiorna particelle
 function updateParticles(dt) {
 	for (let i = particles.length - 1; i >= 0; i--) {
 		const p = particles[i];
+		
+		if (!p || !p.alive) continue;
 		
 		p.vx += rnd(-wind, wind) * dt;
 		p.vy += (p.hasWeight ? GRAVITY_ROCKS : GRAVITY_FLAMES) * dt;
@@ -101,7 +151,8 @@ function updateParticles(dt) {
 		p.size *= Math.pow(0.99, dt * 60);
 
 		if (p.life <= 0 || p.size <= 0 || p.y <= 0 || p.y >= canvas.height * PIXELS_TO_METERS) {
-			particles.splice(i, 1);
+			//particles.splice(i, 1);
+			p.alive = false;
 			continue;
 		}
 	}
@@ -110,6 +161,8 @@ function updateParticles(dt) {
 function drawParticles() {
 	for (let i = particles.length - 1; i >= 0; i--) {
 		const p = particles[i];
+		
+		if (!p || !p.alive) continue;
 		
 		const r = p.size * METERS_TO_PIXELS;
 		const px = p.x * METERS_TO_PIXELS;
@@ -122,7 +175,7 @@ function drawParticles() {
 		//const color = blueColor(p.heat);
 		//const color = redColor(p.heat);
 		//const color = fireColor(p.heat, 1, 0);
-		const color = fireColor(p.heat, 1, 0);
+		const color = fireColor(p.heat, flameColor % 2, flameColor % 3);
 		
 		gradient.addColorStop(0, `rgba(${color},${p.life})`);
 		gradient.addColorStop(0.5, `rgba(${color},${p.life})`);
@@ -149,37 +202,79 @@ function drawParticles() {
 
 function n(x) { if(x === undefined || x === null) return ''; return x >= 0 ? x.toFixed(2).padStart(7, ' '): x.toFixed(2).padStart(7, ' '); }
 
+let line = 0;
+
+function pushStat(txt) {
+	line+=10;
+	if(txt) ctx.fillText(txt, 10, line);
+}
+
 function drawStats(dt) {
-	ctx.fillStyle = '#fff';
-	ctx.fillText('particles='+particles.length, 10, 10);
-	ctx.fillText('cx='+cx+' cy='+cy, 10, 20);
-	ctx.fillText('dt='+((dt*1000)|0)/1000, 10, 30);
 	try{
-		ctx.fillText('particle[0] life='+n(particles[0].life)+' heat='+n(particles[0].heat), 10, 40);
-		ctx.fillText('particle[1] life='+n(particles[1].life)+' heat='+n(particles[1].heat), 10, 50);
+		let countAlive = 0;
+		let countNotAlive = 0;
+		let countVoid = 0;
 		let countRocks = 0;
 		let countFlames = 0;
-		for (let i = particles.length - 1; i >= 0; i--) {
-			if (particles[i].hasWeight) countRocks++;
-			else countFlames++;
+		let maxLife = -1;
+		let minLife = 999;
+		let maxHeat = -1;
+		let minHeat = 999;
+		let firstN = 0;//max-min solo tra le prime 5 particelle altrimenti tutti 1-0
+		for (const p of particles) {
+			if (p && p.alive) {
+				countAlive++;
+				if (p.hasWeight) countRocks++; else countFlames++;
+				firstN++;
+				if (firstN < 6 && maxLife < p.life) maxLife = p.life;
+				if (firstN < 6 && minLife > p.life) minLife = p.life;
+				if (firstN < 6 && maxHeat < p.heat) maxHeat = p.heat;
+				if (firstN < 6 && minHeat > p.heat) minHeat = p.heat;
+			} else if (p && !p.alive) {
+				countNotAlive++;
+			} else {
+				countVoid++;
+			}
 		}
-		ctx.fillText('rocks='+n(countRocks)+' flames='+n(countFlames), 10, 60);
+		line=0;
+		ctx.fillStyle = '#fff';
+		pushStat('particles='+particles.length);
+		pushStat('maxParticles='+MAX_PARTICLES);
+		pushStat('cx='+cx);
+		pushStat('cy='+cy);
+		pushStat('dt='+((dt*1000)|0)/1000);	
+		pushStat('alive='+n(countAlive));
+		pushStat('notAlive='+n(countNotAlive));
+		pushStat('void='+n(countVoid));
+		pushStat('rocks='+n(countRocks));
+		pushStat('flames='+n(countFlames));
+		pushStat('minLife='+n(minLife));
+		pushStat('maxLife='+n(maxLife));
+		pushStat('minHeat='+n(minHeat));
+		pushStat('maxHeat='+n(maxHeat));
+		pushStat('realFlame='+realFlame);
+		pushStat('flameColor='+flameColor);
+		pushStat();
+		pushStat('PAUSED='+paused);
 	} catch(e){}
 }
 
 let lastTime = performance.now();
 
+
 function update() {
     const now = performance.now();
-    const dt = (now - lastTime) / 1000;//delta in secondi
+    let dt = (now - lastTime) / 1000;//delta in secondi
     lastTime = now;
 	
-	if (particles.length < MAX_PARTICLES) {
-		spawnFlameParticle();
-		spawnRockParticle();
+	if (!paused) {
+		spawnParticle(false);//fiamma
+		spawnParticle(true);//roccia
+		updateParticles(dt);//aggiorna fisica
+	} else {
+		lastTime = now;
+		dt = 0;
 	}
-	
-	updateParticles(dt);
 	
 	if (realFlame) {
 		//il trucco della fiamma realistica e' tutto qui
