@@ -25,23 +25,29 @@ let cx = canvas.width / 2;
 let cy = canvas.height / 2;
 
 let particles = [];
-const MAX_PARTICLES = 400;
-const PARTICLE_SIZE = 20;//max dimensione particella in m
+let MAX_PARTICLES = 400;
+
+let PARTICLE_SIZE = 20;//max dimensione particella in m
 let currentParticleIndex = 0;
 particles = new Array(MAX_PARTICLES);
 
 const GRAVITY_ROCKS = 9.81;//in basso, m/s2
 const GRAVITY_FLAMES = -4.81;//in alto, m/s2
+let rocksEnabled = true;
+let flamesEnabled = true;
 const wind = 5;//spinta random (m/s2)
 
-
 const METERS_TO_PIXELS = 10;//1 m = 10px
-const PIXELS_TO_METERS = 1/10;//1px = 0.1 m
+const PIXELS_TO_METERS = 1/METERS_TO_PIXELS;//1px = 0.1 m
 
 let realFlame = true;
 let flameColor = 3;//0=green, 1=viola, 2=blu, 3=red, 4=blu
 
 let paused = false;//PAUSA!
+
+//ogni centro genera circa 200-250 particelle (100 fiamme + 150 rocce)
+let centers = [];
+let MAX_CENTERS = 2;//MAX_PARTICLES / 250;
 
 function resizeCanvas() {
   const dpr = window.devicePixelRatio || 1;
@@ -60,6 +66,8 @@ function resizeCanvas() {
   // centro del vulcano al centro dello schermo
   cx = w / 2;
   cy = h / 2;
+  
+  centers.push({cx:cx,cy:cy});
 }
 
 window.addEventListener("resize", resizeCanvas);
@@ -70,26 +78,59 @@ canvas.addEventListener("click", (e) => {
     const rect = canvas.getBoundingClientRect();
     cx = e.clientX - rect.left;
     cy = e.clientY - rect.top;
+	
+	if(centers.length >= MAX_CENTERS) centers.splice(0, 1);
+	centers.push({cx:cx,cy:cy});
+	
 	realFlame = !realFlame;
 	flameColor = (flameColor + 1) % 5;
 });
 
 window.addEventListener("keydown", (e) => {
-  if (e.key === "p" || e.key === "P") {
-    paused = !paused;
-  }
+  if (e.key === 'p' || e.key === 'P') paused = !paused;
+  if (e.key === 'r' || e.key === 'R') rocksEnabled = !rocksEnabled;
+  if (e.key === 'f' || e.key === 'F') flamesEnabled = !flamesEnabled;
 });
 
+window.addEventListener("wheel", (event) => {
+    event.preventDefault();// evita lo scroll della pagina
+    if(event.deltaY < 0){
+        PARTICLE_SIZE += 4;
+		if(PARTICLE_SIZE > 200) PARTICLE_SIZE = 200;
+    } else {
+        PARTICLE_SIZE -= 2;
+		if(PARTICLE_SIZE < 0) PARTICLE_SIZE = 0;
+    }
+}, { passive: false });
+
+
+
+//funzione pseudo-random veloce [0, 1)
+let seed = 123456789;
+function fastRandom() {
+    seed = (1664525 * seed + 1013904223)|0;//operazione modulare implícita con 32-bit
+    return (seed >>> 0) / 0x100000000;//converte in numero tra 0 e 1
+}
 
 function rnd(min, max) {
-  return Math.random() * (max - min) + min;
+  return /*Math.random()*/ fastRandom() * (max - min) + min;
+}
+
+function fireColorX(heat, red, blue) {
+	if (heat > 0.8) return `250,250,250`;
+	
+	var PRI = 250;
+	var MED = heat > 0.6 ? 200 : heat > 0.4 ? 150 : 50;
+	var SEC = heat > 0.6 ? 50 : 0;
+	
+	return (red ? PRI : SEC) +','+MED+','+(blue ? PRI : SEC);
 }
 
 function redColor(heat) {
   if (heat > 0.8) return `250,250,250`;
   if (heat > 0.6) return `250,200, 50`;
   if (heat > 0.4) return `250,150,  0`;
-			      return `150, 50,  0`;
+			      return `250, 50,  0`;
 }
 
 function blueColor(heat) {
@@ -99,19 +140,9 @@ function blueColor(heat) {
 				  return `  0, 50,150`;
 }
 
-function fireColor(heat, red, blue) {
-    if (heat > 0.8) return `250,250,250`;
-
-    const r = red ? (150 + 50 * heat) : 0;
-    const g = 50 + 150 * heat;
-    const b = blue ? (150 + 50 * heat) : 0;
-
-    return `${r|0},${g|0},${b|0}`;
-}
-
-
 //crea particelle vicino cx/cy
 function spawnParticle(isRock) {
+	if (currentParticleIndex >= MAX_PARTICLES) return;
 	let p = particles[currentParticleIndex];
 	if (!p) {
 		p = {};
@@ -122,21 +153,93 @@ function spawnParticle(isRock) {
 }
 
 function generateParticleAttributes(p, isRock) {
-  p.x = cx * PIXELS_TO_METERS + rnd(-PARTICLE_SIZE / 4, PARTICLE_SIZE / 4) * PIXELS_TO_METERS;//spostato orizzontale
-  p.y = cy * PIXELS_TO_METERS + rnd(-PARTICLE_SIZE / 4, PARTICLE_SIZE / 4) * PIXELS_TO_METERS;//poco spostato verticale
-  p.vx = isRock ? rnd(-20, 20) : rnd(-1, 1);//rocce sparate a 20 m/s, fiamme praticamente ferme
-  p.vy = isRock ? rnd(-20, 0) : rnd(-10, 0);//rocce sparate in alto a 20 m/s, fiamme al max 10 m/s
-  p.life = 1;
-  p.size = rnd(0, isRock ? PARTICLE_SIZE / 4 : PARTICLE_SIZE) * PIXELS_TO_METERS;//rocce piccole, fiamme grandi - in metri
-  p.heat = isRock ? rnd(0.3, 0.8) : rnd(0.5, 1);//rocce fredde, fiamme calde
-  p.hasWeight = isRock;
-  p.alive = true;
+	const c = centers[Math.floor(rnd(0, centers.length))];
+	p.cx = c.cx;
+	p.cy = c.cy;
+	
+	p.x = p.cx * PIXELS_TO_METERS;
+	p.y = p.cy * PIXELS_TO_METERS;
+	p.vx = isRock ? rnd(-20, 20) : rnd(-1, 1);//rocce sparate a 20 m/s, fiamme praticamente ferme
+	p.vy = isRock ? rnd(-20, 0) : rnd(-10, 0);//rocce sparate in alto a 20 m/s, fiamme al max 10 m/s
+	p.life = 1;
+	p.size = rnd(0, isRock ? PARTICLE_SIZE / 4 : PARTICLE_SIZE) * PIXELS_TO_METERS;//rocce piccole, fiamme grandi - in metri
+	p.heat = isRock ? rnd(0.4, 0.8) : rnd(0.8, 1);//rocce fredde, fiamme calde
+	p.hasWeight = isRock;
+	p.alive = true;
 }
+
+//le rocce rimbalzano
+function applyRocksCollisions(p, dt) {
+	if (centers.length < 2) return;//se non ci sono almeno 2 centri, niente rimbalzo
+	
+	for(let i = 0; i < particles.length; i++) {
+		if (!particles[i]) continue;//particella ancora non creata
+		if (!particles[i].alive) continue;//particella morta/spenta
+		if (!particles[i].hasWeight) continue;//fiamma non collide
+		if (particles[i] === p) continue;//se stessa
+		if (particles[i].cx === p.cx && particles[i].cy === p.cy) continue;//stesso center -> ignora collisioni
+		if (Math.sign(particles[i].vx) === Math.sign(p.vx)) continue;//stessa direzione -> ignora collisioni
+		let minDist = p.size / 2;
+		if (Math.abs(particles[i].x - p.x) < minDist && Math.abs(particles[i].y - p.y) < minDist) {
+			p.vx = -p.vx * 0.9;//rimbalzo un pò smorzato
+			p.heat = 0.9;//si infiamma!
+			p.life = 0.9;//dura di piu?
+		}
+	}
+}
+
+//le fiamme vicine tendono ad attrarsi!!!
+function applyThermalAttraction(p, dt) {
+  if (centers.length < 2) return;//se non ci sono almeno 2 centri, niente fusione
+  
+  let ax = 0;
+  let ay = 0;
+  
+  //centro di massa dei fuochi
+  let mx = 0;
+  let my = 0;
+  for (const c of centers) {
+    mx += c.cx;
+    my += c.cy;
+  }
+  mx /= centers.length;
+  my /= centers.length;
+
+  //punto di fusione "un po' sopra" il centro di massa
+  const targetX = mx * PIXELS_TO_METERS;
+  const targetY = (my - 80) * PIXELS_TO_METERS;
+
+  const dx = targetX - p.x;
+  const dy = targetY - p.y;
+
+  const dist2 = dx*dx + dy*dy;
+  const minDist = 5;//metri -> 50px
+
+  if (dist2 < minDist*minDist && dist2 > 0.01) {
+    const dist = Math.sqrt(dist2);
+
+    //più calda = più attrattiva
+    const heatFactor = 0.6 + (p.heat * 0.8);
+
+    //forza che cresce avvicinandosi
+    const strength = (1 - dist / minDist) * 8 * heatFactor;
+
+    //attrazione verso il centro di fusione
+    ax += (dx / dist) * strength * dt;
+    ay += (dy / dist) * strength * dt;
+  }
+
+  p.vx += ax;
+  p.vy += ay;
+}
+
+
+
 
 
 //aggiorna particelle
 function updateParticles(dt) {
-	for (let i = particles.length - 1; i >= 0; i--) {
+	for (let i = MAX_PARTICLES - 1; i >= 0; i--) {
 		const p = particles[i];
 		
 		if (!p || !p.alive) continue;
@@ -145,21 +248,31 @@ function updateParticles(dt) {
 		p.vy += (p.hasWeight ? GRAVITY_ROCKS : GRAVITY_FLAMES) * dt;
 		p.x += p.vx * dt;
 		p.y += p.vy * dt;
-		p.life -= (p.hasWeight ? 0.25 : 0.5) * dt;//diminuzione vita minore per le rocce
-		p.heat -= (p.hasWeight ? 0.95 : 2) * dt;//diminuzione heat minore per le rocce
+		//ROCCE:
+		//PARTICLE_SIZE = 20 -> 0.25 -> 1/4
+		//PARTICLE_SIZE = 40 -> 0.125 -> 1/8
+		//FIAMME:
+		//PARTICLE_SIZE = 20 -> 0.5 -> 1/2
+		//PARTICLE_SIZE = 40 -> 0.25 -> 1/4
+		let dimRocks = 10 / (PARTICLE_SIZE * 2);
+		let dimFlames = 10 / (PARTICLE_SIZE);
+		p.life -= (p.hasWeight ? dimRocks : dimFlames) * dt;//diminuzione vita minore per le rocce
+		p.heat -= (p.hasWeight ? dimRocks : dimFlames) * dt;//diminuzione heat minore per le rocce
 		p.heat = Math.max(0, p.heat);
 		p.size *= Math.pow(0.99, dt * 60);
 
-		if (p.life <= 0 || p.size <= 0 || p.y <= 0 || p.y >= canvas.height * PIXELS_TO_METERS) {
-			//particles.splice(i, 1);
+		if (p.life <= 0 || p.size <= 0 || p.heat <= 0 || p.y <= 0 || p.y >= canvas.height * PIXELS_TO_METERS) {
 			p.alive = false;
 			continue;
 		}
+		
+		if (!p.hasWeight) applyThermalAttraction(p, dt);
+		else applyRocksCollisions(p, dt);
 	}
 }
 
 function drawParticles() {
-	for (let i = particles.length - 1; i >= 0; i--) {
+	for (let i = MAX_PARTICLES - 1; i >= 0; i--) {
 		const p = particles[i];
 		
 		if (!p || !p.alive) continue;
@@ -172,10 +285,7 @@ function drawParticles() {
 			px, py, 0,
 			px, py, r
 		);
-		//const color = blueColor(p.heat);
-		//const color = redColor(p.heat);
-		//const color = fireColor(p.heat, 1, 0);
-		const color = fireColor(p.heat, flameColor % 2, flameColor % 3);
+		const color = fireColorX(p.heat, flameColor % 2, flameColor % 3);//redColor(p.heat);
 		
 		gradient.addColorStop(0, `rgba(${color},${p.life})`);
 		gradient.addColorStop(0.5, `rgba(${color},${p.life})`);
@@ -187,20 +297,24 @@ function drawParticles() {
 		ctx.arc(px, py, r, 0, Math.PI * 2);
 		ctx.fill();
 		
+		/*
 		if (p.hasWeight) {
-			//filo verso il centro
+			//filo verso il centro simula scia
+			let cx = p.cx;
+			let cy = p.cy;
 			const sx = cx + (px - cx) * 0.95;
 			const sy = cy + (py - cy) * 0.95;
 			ctx.beginPath();
-			ctx.strokeStyle = `rgba(${color},${p.life / 5})`;
+			ctx.strokeStyle = `rgba(${color},${p.life / 2})`;
 			ctx.moveTo(px, py);
 			ctx.lineTo(sx, sy);
 			ctx.stroke();
 		}
+		*/
 	}
 }
 
-function n(x) { if(x === undefined || x === null) return ''; return x >= 0 ? x.toFixed(2).padStart(7, ' '): x.toFixed(2).padStart(7, ' '); }
+function n(x) { if(x === undefined || x === null) return ''; return x.toFixed(2); }
 
 let line = 0;
 
@@ -238,29 +352,35 @@ function drawStats(dt) {
 		}
 		line=0;
 		ctx.fillStyle = '#fff';
-		pushStat('particles='+particles.length);
-		pushStat('maxParticles='+MAX_PARTICLES);
-		pushStat('cx='+cx);
-		pushStat('cy='+cy);
-		pushStat('dt='+((dt*1000)|0)/1000);	
-		pushStat('alive='+n(countAlive));
-		pushStat('notAlive='+n(countNotAlive));
-		pushStat('void='+n(countVoid));
-		pushStat('rocks='+n(countRocks));
-		pushStat('flames='+n(countFlames));
+		pushStat('MAX_PARTICLES='+MAX_PARTICLES);
+		pushStat('PARTICLE_SIZE='+PARTICLE_SIZE+'px');
+		pushStat('cx='+cx+'px');
+		pushStat('cy='+cy+'px');
+		pushStat('centers='+centers.length);
+		pushStat();
+		pushStat('dt='+((dt*1000)|0)/1000+'s');	
+		pushStat();
+		pushStat('alive='+countAlive);
+		pushStat('notAlive='+countNotAlive);
+		pushStat('void='+countVoid);
+		pushStat('rocks='+countRocks);
+		pushStat('flames='+countFlames);
+		pushStat();
 		pushStat('minLife='+n(minLife));
 		pushStat('maxLife='+n(maxLife));
 		pushStat('minHeat='+n(minHeat));
 		pushStat('maxHeat='+n(maxHeat));
+		pushStat();
 		pushStat('realFlame='+realFlame);
 		pushStat('flameColor='+flameColor);
+		pushStat('[R]ocksEnabled='+rocksEnabled);
+		pushStat('[F]lamesEnabled='+flamesEnabled);
 		pushStat();
-		pushStat('PAUSED='+paused);
+		pushStat('[P]aused='+paused);
 	} catch(e){}
 }
 
 let lastTime = performance.now();
-
 
 function update() {
     const now = performance.now();
@@ -268,12 +388,11 @@ function update() {
     lastTime = now;
 	
 	if (!paused) {
-		spawnParticle(false);//fiamma
-		spawnParticle(true);//roccia
+		for(c in centers) {
+		if (flamesEnabled) spawnParticle(false);//fiamma
+		if (rocksEnabled) spawnParticle(true);//roccia
+		}
 		updateParticles(dt);//aggiorna fisica
-	} else {
-		lastTime = now;
-		dt = 0;
 	}
 	
 	if (realFlame) {
