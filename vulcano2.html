@@ -1,0 +1,457 @@
+<html>
+<head>
+<style>
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: black;
+}
+
+canvas {
+  display: block;
+}
+</style>
+</head>
+<body>
+<canvas id="fire"></canvas>
+<script>
+const canvas = document.getElementById("fire");
+const ctx = canvas.getContext("2d");
+
+let particles = [];
+let MAX_PARTICLES = 50;
+
+let PARTICLE_SIZE = 20;//max dimensione particella in px
+particles = new Array(MAX_PARTICLES);
+
+let realFlame = true;
+let flameColor = 3;//0=green, 1=viola, 2=blu, 3=red, 4=blu
+let fillStyle = 0;
+
+let paused = false;//PAUSA!
+
+let MAX_CONNECTIONS = 1;//3 == caos
+let MAX_LINK_DIST = 300;//px
+let DRAG = -0.1;//attrito rallenta le particelle
+
+let REPEL_RADIUS = 300;//click sx/dx sposta particelle
+let REPEL_FORCE = 100;//forza applicata
+
+function resizeCanvas() {
+  const dpr = window.devicePixelRatio || 1;
+
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+
+  canvas.width  = Math.floor(w * dpr);
+  canvas.height = Math.floor(h * dpr);
+
+  canvas.style.width  = w + "px";
+  canvas.style.height = h + "px";
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+window.addEventListener("resize", resizeCanvas);
+
+resizeCanvas();
+
+function applyRepulsion(repelX, repelY, factor) {
+    for (let i = 0; i < MAX_PARTICLES; i++) {
+        const p = particles[i];
+        if (!p || !p.alive) continue;
+
+        const dx = p.x - repelX;
+        const dy = p.y - repelY;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+
+        if (dist === 0 || dist > REPEL_RADIUS) continue;
+
+        //direzione normalizzata
+        const nx = dx / dist;
+        const ny = dy / dist;
+
+        //forza che decresce con la distanza
+        const strength = (1 - dist / REPEL_RADIUS) * REPEL_FORCE * factor;
+
+        //impulso istantaneo
+        p.vx += nx * strength;
+        p.vy += ny * strength;
+    }
+}
+
+
+//gestione click (sinistro)
+canvas.addEventListener("click", (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const cx = e.clientX - rect.left;
+    const cy = e.clientY - rect.top;
+	
+	realFlame = !realFlame;
+	flameColor = (flameColor + 1) % 5;
+	
+	//repulsione particelle
+	applyRepulsion(cx, cy, 1);//cx, cy
+});
+
+//gestione click (destro)
+canvas.addEventListener("contextmenu", (e) => {
+	e.preventDefault();//blocca menu browser
+
+	const rect = canvas.getBoundingClientRect();
+	const cx = e.clientX - rect.left;
+	const cy = e.clientY - rect.top;
+
+	//attrazione particelle
+	applyRepulsion(cx, cy, -1);//cx, cy
+});
+
+
+window.addEventListener("keydown", (e) => {
+  if (e.key === 'p' || e.key === 'P') paused = !paused;
+  if (e.key === 'l' || e.key === 'L') realFlame = !realFlame;
+  if (e.key === 'c' || e.key === 'C') flameColor = (flameColor + 1) % 5;
+  if (e.key === 'f' || e.key === 'F') fillStyle = (fillStyle + 1) % 3;
+  if (e.key === 'n' || e.key === 'N') MAX_CONNECTIONS = (MAX_CONNECTIONS + 1) % 4;
+  if (e.key === 'd' || e.key === 'D') MAX_LINK_DIST = (MAX_LINK_DIST + 50) % 1000;
+});
+
+window.addEventListener("wheel", (event) => {
+    event.preventDefault();// evita lo scroll della pagina
+    if(event.deltaY < 0){
+        PARTICLE_SIZE += 4;
+		if(PARTICLE_SIZE > 200) PARTICLE_SIZE = 200;
+		
+		for (let i = 0; i < MAX_PARTICLES; i++) {
+			const p = particles[i];
+			if (!p || !p.alive) continue;
+			p.size += 4;
+			if (p.size > 200) p.size = 200;
+		}
+    } else {
+        PARTICLE_SIZE -= 2;
+		if(PARTICLE_SIZE < 0) PARTICLE_SIZE = 0;
+		
+		for (let i = 0; i < MAX_PARTICLES; i++) {
+			const p = particles[i];
+			if (!p || !p.alive) continue;
+			p.size -= 2;
+			if (p.size < 0) p.size = 0;
+		}
+    }
+	
+}, { passive: false });
+
+
+
+//funzione pseudo-random veloce [0, 1)
+let seed = 123456789;
+function fastRandom() {
+    seed = (1664525 * seed + 1013904223)|0;//operazione modulare implícita con 32-bit
+    return (seed >>> 0) / 0x100000000;//converte in numero tra 0 e 1
+}
+
+function rnd(min, max) {
+  return /*Math.random()*/ fastRandom() * (max - min) + min;
+}
+
+function fireColorX(heat, red, blue) {
+	if (heat > 0.8) return `250,250,250`;
+	
+	var PRI = 250;
+	var MED = heat > 0.6 ? 200 : heat > 0.4 ? 150 : 50;
+	var SEC = heat > 0.6 ? 50 : 0;
+	
+	return (red ? PRI : SEC) +','+MED+','+(blue ? PRI : SEC);
+}
+
+//crea particelle
+function spawnParticle() {
+	for (let i = 0; i < MAX_PARTICLES; i++) {
+		let p = particles[i];
+		if (!p || !p.alive) {
+			if (!p) {
+				p = {};
+				particles[i] = p;
+			}
+			p.x = rnd(0, canvas.clientWidth);
+			p.y = rnd(0, canvas.clientHeight);
+			p.vx = rnd(-50, 50);
+			p.vy = rnd(-50, 50);
+			p.size = rnd(1, PARTICLE_SIZE);
+			p.alive = true;
+			p.id = i;
+			return;//UNA sola
+		}
+	}
+}
+
+
+
+//aggiorna particelle
+function updateParticles(dt) {
+	const drag = Math.exp(DRAG * dt);//attrito == particelle rallentano
+	
+	for (let i = MAX_PARTICLES - 1; i >= 0; i--) {
+		const p = particles[i];
+		
+		if (!p || !p.alive) continue;
+		
+		p.vx *= drag;
+		p.vy *= drag;		
+		
+		p.x += p.vx * dt;
+		p.y += p.vy * dt;
+		
+		//rimbalzo sui bordi
+		if (p.y < 0 + p.size) {
+			p.vy *= -1;
+			p.y = 0 + p.size;
+		}		
+		
+		if (p.y > canvas.clientHeight - p.size) {
+			p.vy *= -1;
+			p.y = canvas.clientHeight - p.size;
+		}
+		
+		if (p.x < 0 + p.size) {
+			p.vx *= -1;
+			p.x = 0 + p.size;
+		}
+		
+		if (p.x > canvas.clientWidth - p.size) {
+			p.vx *= -1;
+			p.x = canvas.clientWidth - p.size;
+		}
+	}
+}
+
+function resolveCollisions() {
+	for (let i = 0; i < MAX_PARTICLES; i++) {
+		const p = particles[i];
+		if (!p || !p.alive) continue;
+
+		for (let j = i + 1; j < MAX_PARTICLES; j++) {
+			const q = particles[j];
+			if (!q || !q.alive) continue;
+
+			const dx = q.x - p.x;
+			const dy = q.y - p.y;
+			const dist = Math.sqrt(dx*dx + dy*dy);
+			const minDist = p.size + q.size;
+
+			if (dist === 0 || dist >= minDist) continue;
+
+			//normale di collisione
+			const nx = dx / dist;
+			const ny = dy / dist;
+
+			//separazione geometrica
+			const overlap = minDist - dist;
+			p.x -= nx * overlap * 0.5;
+			p.y -= ny * overlap * 0.5;
+			q.x += nx * overlap * 0.5;
+			q.y += ny * overlap * 0.5;
+
+			//velocità lungo normale
+			const vp = p.vx * nx + p.vy * ny;
+			const vq = q.vx * nx + q.vy * ny;
+
+			//scambio delle componenti normali (masse uguali)
+			const diff = vq - vp;
+			p.vx += diff * nx;
+			p.vy += diff * ny;
+			q.vx -= diff * nx;
+			q.vy -= diff * ny;
+		}
+	}
+}
+
+
+function drawParticles() {
+	for (let i = MAX_PARTICLES - 1; i >= 0; i--) {
+		const p = particles[i];
+		
+		if (!p || !p.alive) continue;
+		
+		const r = p.size;
+		const px = p.x;
+		const py = p.y;
+		
+		const gradient = ctx.createRadialGradient(
+			px, py, 0,
+			px, py, r
+		);
+		
+		const color = fireColorX(0.5, flameColor % 2, flameColor % 3);
+		
+		gradient.addColorStop(0, `rgba(${color},1)`);
+		gradient.addColorStop(1, `rgba(${color},0)`);
+		
+		//palla di fuoco
+		ctx.fillStyle = gradient;
+		ctx.beginPath();
+		ctx.arc(px, py, r, 0, Math.PI * 2);
+		if (fillStyle === 0 || fillStyle === 2) ctx.fill();
+		if (fillStyle === 1 || fillStyle === 2) ctx.stroke();
+		
+		//disegna numeretto
+		ctx.fillStyle = '#fff';
+		ctx.fillText(p.id, px - 4, py + 4);
+	}
+}
+
+function drawConnections() {
+	ctx.lineWidth = 1;
+
+	for (let i = 0; i < MAX_PARTICLES; i++) {
+		const p = particles[i];
+		if (!p || !p.alive) continue;
+
+		//trova le N particelle vive più vicine
+		let nearest = [];
+
+		for (let j = 0; j < MAX_PARTICLES; j++) {
+			if (i === j) continue;
+			const q = particles[j];
+			if (!q || !q.alive) continue;
+
+			const dx = p.x - q.x;
+			const dy = p.y - q.y;
+			const dist = Math.sqrt(dx*dx + dy*dy);
+
+			if (dist < MAX_LINK_DIST) {
+				nearest.push({ q, dist });
+			}
+		}
+
+		nearest.sort((a, b) => a.dist - b.dist);
+		nearest = nearest.slice(0, MAX_CONNECTIONS);
+
+		const px = p.x;
+		const py = p.y;
+
+		for (const n of nearest) {
+			if (p.id > n.id) continue;//disegna solo 1 connessione p<->q
+			const alpha = 1 - (n.dist / MAX_LINK_DIST);
+
+			const qx = n.q.x;
+			const qy = n.q.y;
+
+			const color = fireColorX(0.5, flameColor % 2, flameColor % 3);
+			ctx.strokeStyle = `rgba(${color},${alpha * 0.5})`;
+			ctx.beginPath();
+			ctx.moveTo(px, py);
+			ctx.lineTo(qx, qy);
+			ctx.stroke();
+		}
+	}
+}
+
+
+function n(x) { if(x === undefined || x === null) return ''; return x.toFixed(2); }
+
+let line = 0;
+
+function pushStat(txt) {
+	line+=10;
+	if(txt) ctx.fillText(txt, 10, line);
+}
+
+function drawStats(dt) {
+	try{
+		let countAlive = 0;
+		let countNotAlive = 0;
+		let countVoid = 0;
+		let maxSpeedX = 0;
+		let maxSpeedY = 0;
+		for (const p of particles) {
+			if (p && p.alive) {
+				countAlive++;
+				let vx = Math.abs(p.vx);
+				let vy = Math.abs(p.vy);
+				if (vx > maxSpeedX) maxSpeedX = vx;
+				if (vy > maxSpeedY) maxSpeedY = vy;
+			} else if (p && !p.alive) {
+				countNotAlive++;
+			} else {
+				countVoid++;
+			}
+		}
+		line=0;
+		ctx.fillStyle = '#fff';
+		pushStat('MAX_PARTICLES='+MAX_PARTICLES);
+		pushStat('PARTICLE_SIZE='+PARTICLE_SIZE+'px');
+		pushStat();
+		pushStat('dt='+((dt*1000)|0)/1000+'s');	
+		pushStat();
+		pushStat('alive='+countAlive);
+		pushStat('notAlive='+countNotAlive);
+		pushStat('void='+countVoid);
+		pushStat();
+		pushStat('maxSpeedX='+(maxSpeedX|0));
+		pushStat('maxSpeedY='+(maxSpeedY|0));
+		pushStat();
+		pushStat('DRAG='+DRAG);
+		pushStat('REPEL_FORCE='+REPEL_FORCE);
+		pushStat('REPEL_RADIUS='+REPEL_RADIUS);
+		pushStat();
+		pushStat('rea[L]flame='+realFlame);
+		pushStat('flame[C]olor='+flameColor);
+		pushStat('[F]illStyle='+fillStyle);
+		pushStat();
+		pushStat('MAX_CON[N]ECTIONS='+MAX_CONNECTIONS);
+		pushStat('MAX_LINK_[D]IST='+MAX_LINK_DIST);
+		pushStat();
+		pushStat('[P]aused='+paused);
+	} catch(e){}
+}
+
+let lastTime = performance.now();
+
+function update() {
+    const now = performance.now();
+    let dt = (now - lastTime) / 1000;//delta in secondi
+    lastTime = now;
+	
+	let countAlive = 0;
+	let countNotAlive = 0;
+	for (const p of particles) {
+		if (p && p.alive) countAlive++;
+		else countNotAlive++;
+	}
+	
+	if (!paused) {
+		if (countAlive < MAX_PARTICLES) spawnParticle();
+		updateParticles(dt);//aggiorna fisica
+		resolveCollisions();
+	}
+	
+	if (realFlame) {
+		//il trucco della fiamma realistica e' tutto qui
+		ctx.globalCompositeOperation = "source-over";
+		ctx.fillStyle = "rgba(0,0,0,0.15)";//non cancella del tutto le particelle dei frame precedenti -> dissolvile appena
+		ctx.fillRect(0, 0, canvas.width, canvas.height);
+		ctx.globalCompositeOperation = "lighter";//quando le particelle si sovrappongono -> bianco!
+	} else {
+		ctx.globalCompositeOperation = "source-over";
+		ctx.fillStyle = "#000";
+		ctx.fillRect(0, 0, canvas.width, canvas.height);
+	}
+	
+	drawParticles();
+	drawConnections();
+	
+	drawStats(dt);
+	
+	requestAnimationFrame(update);
+}
+
+update();
+
+</script>
+</body>
+</html>
